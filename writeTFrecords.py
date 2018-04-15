@@ -109,7 +109,8 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
     # process all filenames into a training and testing data -TF records
     for file in filenames:
         # numpy loadtxt for file with column names and formats
-        data_cond = np.loadtxt(file,dtype={'names': ['Period', 'Block', 'Trial','Trial_id','x_ord','y_ord'],                                       'formats': ['S3', 'S6' ,'S6','i4', 'i4', 'i4']}, delimiter="\t",skiprows=1)
+        data_cond = np.loadtxt(file,dtype={'names': ['Period', 'Block', 'Trial','Trial_id','x_ord','y_ord'],  
+                    'formats': ['S3', 'S6' ,'S6','i4', 'i4', 'i4']}, delimiter="\t",skiprows=1)
         # name to save TF records
         sName = file.replace('.txt','')
         # display current file being processed
@@ -139,12 +140,12 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         y_acc = np.append(0, np.diff(y_vel))
         
         # store data from future in the same example to feed into algorithm
-        out_x = np.append(x_ord[5:],[-1]*prediction_time)
-        out_y = np.append(y_ord[5:],[-1]*prediction_time)
-        out_xacc = np.append(x_acc[5:], [-1]*prediction_time)
-        out_yacc = np.append(y_acc[5:], [-1]*prediction_time)
-        out_xvel = np.append(x_vel[5:], [-1]*prediction_time)
-        out_yvel = np.append(y_vel[5:], [-1]*prediction_time)
+        out_x = np.append(x_ord[prediction_time:],[-1]*prediction_time)
+        out_y = np.append(y_ord[prediction_time:],[-1]*prediction_time)
+        out_xacc = np.append(x_acc[prediction_time:], [-1]*prediction_time)
+        out_yacc = np.append(y_acc[prediction_time:], [-1]*prediction_time)
+        out_xvel = np.append(x_vel[prediction_time:], [-1]*prediction_time)
+        out_yvel = np.append(y_vel[prediction_time:], [-1]*prediction_time)
     
         subjectId = subjectId + 1
         trial_id_prev = 0
@@ -182,7 +183,7 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
             }))
             
             timer = timer+1
-            if (idx < 10000) or (idx > (len(period)-10000)) :
+            if (idx < 10000) or (idx >= (len(period)-10000)) :
                 trainWriter.write(example.SerializeToString())
             testWriter.write(example.SerializeToString())
     
@@ -193,6 +194,6 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
 
 tfrecords_filename = 'mouse_subjects_future5.tfrecords'
 
-writeTFrecords(tfrecords_filename,filenames, 5)
+writeTFrecords(tfrecords_filename,filenames, 1)
 print("Finished generating TFRecords for training and testing")
 

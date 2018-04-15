@@ -229,7 +229,7 @@ def training(filenames_train):
                                             feed_dict={X : np.array([[ x_ord[0,0],y_ord[0,0],x_vel[0,0],y_vel[0,0] ]]), 
                                             a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
-                                            a_prev : np.array([[ out_xacc[0,0], out_yacc[0,0] ]]),
+                                            a_prev : np.array([[ xacc[0,0], yacc[0,0] ]]),
                                             timer_stim : np.array([[ time_after_stim[0,0] ]]) })
 
 
@@ -332,7 +332,7 @@ def testing(filenames_test, fname):
                                              feed_dict={X: [[ x_ord[0,0],y_ord[0,0],x_vel[0,0],y_vel[0,0] ]], 
                                              a: [[ x_acc[0,0], y_acc[0,0] ]], 
                                              X_pred: [[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]],
-                                             a_prev: [[ out_xacc[0,0], out_yacc[0,0] ]],
+                                             a_prev: [[ xacc[0,0], yacc[0,0] ]],
                                              timer_stim : [[ time_after_stim[0,0] ]] })
             
             if idx%10000 == 0:
