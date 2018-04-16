@@ -117,11 +117,13 @@ def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, d
         new_evidence = 0
     else:
         new_evidence = tf.add(new_evidence, tf.add(evidence, evidence_dist.sample([1])))
-    x = tf.maximum(a, [0.0,0.0] )
+
+    sign_multiplier = tf.sign(a)
+    x = tf.abs(a)
 
     accumulated_evidence = tf.subtract(1.0 ,  tf.exp( tf.negative( tf.multiply(x,new_evidence) ) ) )
 
-    a_evidence = tf.add(a_prev , tf.multiply(a_max, accumulated_evidence, name='aev'))
+    a_evidence = tf.add(a_prev , tf.multiply( tf.multiply(sign_multiplier,a_max), accumulated_evidence, name='aev'))
 
     X_hat = tf.add(tf.matmul(X,F), tf.matmul(a_evidence, tf.transpose(G)), name='calculate_xhat')
     # changed new_evidence to evidence to test the variability of accumulation
