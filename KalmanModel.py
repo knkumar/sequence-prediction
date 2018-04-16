@@ -93,7 +93,7 @@ def read_and_decode(filename_queue):
     return x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,out_yvel, out_xacc, out_yacc, time_after_stim
 
 
-def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, new_evidence):
+def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, delay_var, new_evidence):
     """
     A state space model designed to predict a future state based on the current state. This is an adaptation of the kalman filter for trajectory predictions.
     
@@ -113,18 +113,19 @@ def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, n
 
     # a_prev = tf.stop_gradient(a_prev)
     print("Running Model")
-    if time_after_stim == 1:
-        new_evidence = evidence
+    if time_after_stim == delay_var:
+        new_evidence = 0
+    else:
+        new_evidence = tf.add(new_evidence, tf.add(evidence, evidence_dist.sample([1])))
+    x = tf.maximum(a, [0.0,0.0] )
 
-    x = tf.maximum([0.0,0.0],a)
-    new_evidence = tf.add(new_evidence, evidence_dist.sample([1]) )
-    accumulated_evidence = 1 - (tf.exp(-x*new_evidence))
+    accumulated_evidence = tf.subtract(1.0 ,  tf.exp( tf.negative( tf.multiply(x,new_evidence) ) ) )
 
     a_evidence = tf.add(a_prev , tf.multiply(a_max, accumulated_evidence, name='aev'))
 
     X_hat = tf.add(tf.matmul(X,F), tf.matmul(a_evidence, tf.transpose(G)), name='calculate_xhat')
     # changed new_evidence to evidence to test the variability of accumulation
-    return X_hat, evidence, accumulated_evidence
+    return X_hat, new_evidence, accumulated_evidence
 
 
 from tensorflow.python.framework import ops
@@ -183,6 +184,9 @@ def training(filenames_train):
     evidence = tf.get_variable('ev', shape=(1), dtype=tf.float32, 
                            initializer = tf.random_normal_initializer())
 
+    delay_var = tf.get_variable('delay_var', shape=(1), dtype=tf.int32, 
+                           initializer = tf.constant_initializer(30))
+
     mu = tf.get_variable('mu', shape=(1), dtype=tf.float32, 
                            initializer = tf.random_normal_initializer())
     sigma = tf.get_variable('sigma', shape=(1), dtype=tf.float32, 
@@ -191,13 +195,14 @@ def training(filenames_train):
     evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
     new_evidence = evidence
 
-    X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, new_evidence)
+    X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence)
 
     loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
     
     # operation train minimizes the loss function
-    train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma])
+    train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
     
+
     #optimizer = tf.train.AdamOptimizer(0.05)
     #grads_and_vars = optimizer.compute_gradients(loss, var_list=[a_max, F, G, mu, sigma])
     #train = optimizer.apply_gradients(grads_and_vars, global_step=global_step)
@@ -216,9 +221,8 @@ def training(filenames_train):
         count = 1
         num_records = sum(1 for _ in tf.python_io.tf_record_iterator(filenames_train))
         #while loss_val > threshold and count < 5000:
-        while loss_val > threshold and count < 50:
+        while loss_val > threshold and count < 100:
             all_loss_values = []
-            print(num_records)
             for idx in range(num_records):
 
                 x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,\
@@ -229,7 +233,7 @@ def training(filenames_train):
                                             feed_dict={X : np.array([[ x_ord[0,0],y_ord[0,0],x_vel[0,0],y_vel[0,0] ]]), 
                                             a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
-                                            a_prev : np.array([[ xacc[0,0], yacc[0,0] ]]),
+                                            a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             timer_stim : np.array([[ time_after_stim[0,0] ]]) })
 
 
@@ -300,6 +304,7 @@ def testing(filenames_test, fname):
         G = graph.get_tensor_by_name("G:0")
         a_max = graph.get_tensor_by_name("a_max:0")
         evidence = graph.get_tensor_by_name("ev:0")
+        delay_var = graph.get_tensor_by_name("delay_var:0")
         mu = graph.get_tensor_by_name("mu:0")
         sigma = graph.get_tensor_by_name("sigma:0")
 
@@ -307,7 +312,8 @@ def testing(filenames_test, fname):
         evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
         new_evidence = evidence
 
-        X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, new_evidence)
+        X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence)
+        #X_hat, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var)
         
         loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
 
@@ -332,7 +338,7 @@ def testing(filenames_test, fname):
                                              feed_dict={X: [[ x_ord[0,0],y_ord[0,0],x_vel[0,0],y_vel[0,0] ]], 
                                              a: [[ x_acc[0,0], y_acc[0,0] ]], 
                                              X_pred: [[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]],
-                                             a_prev: [[ xacc[0,0], yacc[0,0] ]],
+                                             a_prev: [[ x_acc[0,0], y_acc[0,0] ]],
                                              timer_stim : [[ time_after_stim[0,0] ]] })
             
             if idx%10000 == 0:
@@ -361,6 +367,7 @@ def testing(filenames_test, fname):
 
         coords.request_stop()
         coords.join(threads)
+        sess.close()
 
 if __name__ == "__main__":
     
