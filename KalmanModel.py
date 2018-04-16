@@ -93,7 +93,7 @@ def read_and_decode(filename_queue):
     return x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,out_yvel, out_xacc, out_yacc, time_after_stim
 
 
-def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, delay_var, new_evidence):
+def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, delay_var, new_evidence, weight_evidence):
     """
     A state space model designed to predict a future state based on the current state. This is an adaptation of the kalman filter for trajectory predictions.
     
@@ -111,19 +111,27 @@ def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, d
              accumulated_evidence - accumulated control and noise returned for later processing
     """
 
+    """
+    NK : 04/16/2018 - Add two stages in process for detection and identification
+    detection - process to initialize the movement
+    identifiaction - process to correct the movement
+    These would depend on the time for previous trial
+    """
+
     # a_prev = tf.stop_gradient(a_prev)
     print("Running Model")
     if time_after_stim == delay_var:
         new_evidence = 0
     else:
-        new_evidence = tf.add(new_evidence, tf.add(evidence, evidence_dist.sample([1])))
+        #new_evidence = tf.add(new_evidence, tf.add(evidence, evidence_dist.sample([1])))
+        new_evidence = tf.add( tf.multiply(weight_evidence, new_evidence), tf.add(evidence, evidence_dist.sample([1])))
 
     sign_multiplier = tf.sign(a)
     x = tf.abs(a)
 
     accumulated_evidence = tf.subtract(1.0 ,  tf.exp( tf.negative( tf.multiply(x,new_evidence) ) ) )
 
-    a_evidence = tf.add(a_prev , tf.multiply( tf.multiply(sign_multiplier,a_max), accumulated_evidence, name='aev'))
+    a_evidence = tf.add(a_prev , tf.multiply( tf.multiply(sign_multiplier, a_max), accumulated_evidence, name='aev'))
 
     X_hat = tf.add(tf.matmul(X,F), tf.matmul(a_evidence, tf.transpose(G)), name='calculate_xhat')
     # changed new_evidence to evidence to test the variability of accumulation
@@ -188,6 +196,8 @@ def training(filenames_train):
 
     delay_var = tf.get_variable('delay_var', shape=(1), dtype=tf.int32, 
                            initializer = tf.constant_initializer(30))
+    weight_evidence = tf.get_variable('weight_evidence', shape=(1,2), dtype=tf.float32, 
+                           initializer = tf.random_normal_initializer())
 
     mu = tf.get_variable('mu', shape=(1), dtype=tf.float32, 
                            initializer = tf.random_normal_initializer())
@@ -197,12 +207,12 @@ def training(filenames_train):
     evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
     new_evidence = evidence
 
-    X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence)
+    X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence, weight_evidence)
 
     loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
     
     # operation train minimizes the loss function
-    train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
+    train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var, weight_evidence])
     
 
     #optimizer = tf.train.AdamOptimizer(0.05)
@@ -309,12 +319,13 @@ def testing(filenames_test, fname):
         delay_var = graph.get_tensor_by_name("delay_var:0")
         mu = graph.get_tensor_by_name("mu:0")
         sigma = graph.get_tensor_by_name("sigma:0")
+        weight_evidence = graph.get_tensor_by_name("weight_evidence:0")
 
         # Distribution to sample from
         evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
         new_evidence = evidence
 
-        X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence)
+        X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence, weight_evidence)
         #X_hat, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var)
         
         loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
