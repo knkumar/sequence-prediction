@@ -90,7 +90,7 @@ def read_and_decode(filename_queue):
     out_yacc = tf.reshape(out_yacc, [1])
     time_after_stim = tf.reshape(time_after_stim, [1])
     
-    return x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,out_yvel, out_xacc, out_yacc, time_after_stim
+    return x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,out_yvel, out_xacc, out_yacc, time_after_stim, block
 
 
 def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, delay_var, new_evidence, weight_evidence):
@@ -121,15 +121,16 @@ def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, d
     # a_prev = tf.stop_gradient(a_prev)
     print("Running Model")
     if time_after_stim == delay_var:
-        new_evidence = 0
+        new_evidence = 0.0
     else:
-        #new_evidence = tf.add(new_evidence, tf.add(evidence, evidence_dist.sample([1])))
-        new_evidence = tf.add( tf.multiply(weight_evidence, new_evidence), tf.add(evidence, evidence_dist.sample([1])))
+        #prev_ev = tf.multiply(weight_evidence, new_evidence)
+        prev_ev = new_evidence
+        new_evidence = tf.add(evidence, evidence_dist.sample([1]))
 
     sign_multiplier = tf.sign(a)
     x = tf.abs(a)
 
-    accumulated_evidence = tf.subtract(1.0 ,  tf.exp( tf.negative( tf.multiply(x,new_evidence) ) ) )
+    accumulated_evidence = tf.add( prev_ev, tf.subtract(1.0 ,  tf.exp( tf.negative( tf.multiply(x,new_evidence) ) ) ))
 
     a_evidence = tf.add(a_prev , tf.multiply( tf.multiply(sign_multiplier, a_max), accumulated_evidence, name='aev'))
 
@@ -156,7 +157,7 @@ def training(filenames_train):
     filename_queue = tf.train.string_input_producer([filenames_train])
     # use read_and decode to retrieve tensors after casting and reshaping
     x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,\
-        out_yvel,out_xacc, out_yacc,time_after_stim = read_and_decode(filename_queue)  
+        out_yvel,out_xacc, out_yacc,time_after_stim,block = read_and_decode(filename_queue)  
 
     # create a batch to train the model
     batch = tf.train.batch([x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,
@@ -212,12 +213,12 @@ def training(filenames_train):
     loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
     
     # operation train minimizes the loss function
-    train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var, weight_evidence])
+    #train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
     
 
-    #optimizer = tf.train.AdamOptimizer(0.05)
-    #grads_and_vars = optimizer.compute_gradients(loss, var_list=[a_max, F, G, mu, sigma])
-    #train = optimizer.apply_gradients(grads_and_vars, global_step=global_step)
+    optimizer = tf.train.AdamOptimizer(1e-3)
+    grads_and_vars = optimizer.compute_gradients(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
+    train = optimizer.apply_gradients(grads_and_vars)
 
     # intialize a saver to save trainmed model variables
     saver = tf.train.Saver()
@@ -283,7 +284,7 @@ def testing(filenames_test, fname):
 
     # use read_and decode to retrieve tensors after casting and reshaping
     x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,\
-        out_yvel,out_xacc, out_yacc,time_after_stim = read_and_decode(filename_queue)  
+        out_yvel,out_xacc, out_yacc,time_after_stim, block = read_and_decode(filename_queue)  
 
     # create a batch to read input one after another
     batch = tf.train.batch([x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,
