@@ -113,12 +113,14 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
                     'formats': ['S3', 'S6' ,'S6','i4', 'i4', 'i4']}, delimiter="\t",skiprows=1)
         # name to save TF records
         sName = file.replace('.txt','')
+        saveName = sName.split("/")
         # display current file being processed
-        print(sName+"_train_"+tfrecords_filename)
-        
+        tfrecords_train_savename = "data/"+saveName[-1]+"_train_"+tfrecords_filename
+        print(tfrecords_train_savename)
+        tfrecords_test_savename = "data/"+saveName[-1]+"_test_"+tfrecords_filename
         # open recordwriters for training and testing data
-        trainWriter = tf.python_io.TFRecordWriter(sName+"_train_"+tfrecords_filename)
-        testWriter = tf.python_io.TFRecordWriter(sName+"_test_"+tfrecords_filename)
+        trainWriter = tf.python_io.TFRecordWriter(tfrecords_train_savename)
+        testWriter = tf.python_io.TFRecordWriter(tfrecords_test_savename)
         
         # process text to convert text labels to numerical indicators
         period = processText(data_cond['Period'],0)
@@ -142,8 +144,10 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         # store data from future in the same example to feed into algorithm
         out_x = np.append(x_ord[prediction_time:],[-1]*prediction_time)
         out_y = np.append(y_ord[prediction_time:],[-1]*prediction_time)
-        out_xacc = np.append(x_acc[prediction_time:], [-1]*prediction_time)
-        out_yacc = np.append(y_acc[prediction_time:], [-1]*prediction_time)
+
+        out_xacc = np.append([0]*prediction_time, x_acc[prediction_time:])
+        out_yacc = np.append([0]*prediction_time, y_acc[prediction_time:])
+
         out_xvel = np.append(x_vel[prediction_time:], [-1]*prediction_time)
         out_yvel = np.append(y_vel[prediction_time:], [-1]*prediction_time)
     
@@ -192,7 +196,7 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         
 
 
-tfrecords_filename = 'mouse_subjects_future5.tfrecords'
+tfrecords_filename = 'mouse_subjects.tfrecords'
 
 writeTFrecords(tfrecords_filename,filenames, 1)
 print("Finished generating TFRecords for training and testing")
