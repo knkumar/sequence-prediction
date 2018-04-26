@@ -44,29 +44,31 @@ def read_and_decode(filename_queue):
         'out_xacc' : tf.FixedLenFeature([1],tf.float32),   # 18
         'out_yacc' : tf.FixedLenFeature([1],tf.float32),   # 19
         'time_after_stim' : tf.FixedLenFeature([1],tf.int64),     # 20
+        'prev_pos' : tf.FixedLenFeature([1],tf.int64),     # 21
         })
     
     # Casting serialized string to the right format
-    subject = tf.cast(features['Subject'], tf.int32)
-    period = tf.cast(features['period'], tf.int32)
-    block = tf.cast(features['block'], tf.int32)
-    stim = tf.cast(features['stim'], tf.int32)
-    foilInd = tf.cast(features['foilInd'], tf.int32)
-    pos = tf.cast(features['pos'], tf.int32)
-    trial_id = tf.cast(features['trial_id'], tf.int32)
-    x_ord = tf.cast(features['x_ord'], tf.float32)
-    y_ord = tf.cast(features['y_ord'], tf.float32)
-    x_vel = tf.cast(features['x_vel'], tf.float32)
-    y_vel = tf.cast(features['y_vel'], tf.float32)
-    out_x = tf.cast(features['out_x'], tf.float32)
-    out_y = tf.cast(features['out_y'], tf.float32)
-    out_xvel = tf.cast(features['out_xvel'], tf.float32)
-    out_yvel = tf.cast(features['out_yvel'], tf.float32)
-    x_acc = tf.cast(features['x_acc'], tf.float32)
-    y_acc = tf.cast(features['y_acc'], tf.float32)
-    out_xacc = tf.cast(features['out_xacc'], tf.float32)
-    out_yacc = tf.cast(features['out_yacc'], tf.float32)
-    time_after_stim = tf.cast(features['time_after_stim'], tf.int32)
+    subject = tf.cast(features['Subject'], tf.int64)
+    period = tf.cast(features['period'], tf.int64)
+    block = tf.cast(features['block'], tf.int64)
+    stim = tf.cast(features['stim'], tf.int64)
+    foilInd = tf.cast(features['foilInd'], tf.int64)
+    pos = tf.cast(features['pos'], tf.int64)
+    trial_id = tf.cast(features['trial_id'], tf.int64)
+    x_ord = tf.cast(features['x_ord'], tf.float64)
+    y_ord = tf.cast(features['y_ord'], tf.float64)
+    x_vel = tf.cast(features['x_vel'], tf.float64)
+    y_vel = tf.cast(features['y_vel'], tf.float64)
+    out_x = tf.cast(features['out_x'], tf.float64)
+    out_y = tf.cast(features['out_y'], tf.float64)
+    out_xvel = tf.cast(features['out_xvel'], tf.float64)
+    out_yvel = tf.cast(features['out_yvel'], tf.float64)
+    x_acc = tf.cast(features['x_acc'], tf.float64)
+    y_acc = tf.cast(features['y_acc'], tf.float64)
+    out_xacc = tf.cast(features['out_xacc'], tf.float64)
+    out_yacc = tf.cast(features['out_yacc'], tf.float64)
+    time_after_stim = tf.cast(features['time_after_stim'], tf.int64)
+    prev_pos = tf.cast(features['prev_pos'], tf.int64)
 
     # Rehspaing variable after cast
     subject = tf.reshape(subject, [1])
@@ -89,11 +91,12 @@ def read_and_decode(filename_queue):
     out_xacc = tf.reshape(out_xacc, [1])
     out_yacc = tf.reshape(out_yacc, [1])
     time_after_stim = tf.reshape(time_after_stim, [1])
+    prev_pos = tf.reshape(prev_pos, [1])
     
-    return x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,out_yvel, out_xacc, out_yacc, time_after_stim, block
+    return x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,out_yvel, out_xacc, out_yacc, time_after_stim, block, pos, prev_pos
 
 
-def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, delay_var, new_evidence, weight_evidence):
+def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, delay_var, new_evidence, weight_evidence, pos1, pos2):
     """
     A state space model designed to predict a future state based on the current state. This is an adaptation of the kalman filter for trajectory predictions.
     
@@ -121,22 +124,26 @@ def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, d
     # a_prev = tf.stop_gradient(a_prev)
     print("Running Model")
     if time_after_stim == delay_var:
-        new_evidence = 0.0
+        a_prev = new_evidence[pos1,pos2,:] 
     else:
-        #prev_ev = tf.multiply(weight_evidence, new_evidence)
-        prev_ev = new_evidence
-        new_evidence = tf.add(evidence, evidence_dist.sample([1]))
+        stochastic_evidence = tf.add(evidence, evidence_dist.sample([1]))
 
-    sign_multiplier = tf.sign(a)
-    x = tf.abs(a)
+    #sign_multiplier = tf.sign(a)
+    #x = tf.abs(a)
+    zero = tf.constant([0.0,0.0], dtype=tf.float64)
+    a_x = tf.maximum(zero, a_prev)
 
-    accumulated_evidence = tf.add( prev_ev, tf.subtract(1.0 ,  tf.exp( tf.negative( tf.multiply(x,new_evidence) ) ) ))
+    sample_ax = tf.multiply(a_x,stochastic_evidence)
+    one = tf.constant([1.0,1.0], dtype=tf.float64)
+    accumulated_evidence = tf.subtract(one ,  tf.cast(tf.exp(tf.negative( sample_ax )), tf.float64) )
 
-    a_evidence = tf.add(a_prev , tf.multiply( tf.multiply(sign_multiplier, a_max), accumulated_evidence, name='aev'))
+    time_delta = tf.cast( tf.subtract(delay_var,time_after_stim), tf.float64)
+    a_baseline = tf.multiply(a, tf.multiply(tf.tanh(time_delta), weight_evidence) )
+    a_evidence = tf.add(a_baseline , tf.multiply( a_max, accumulated_evidence, name='aev'))
 
     X_hat = tf.add(tf.matmul(X,F), tf.matmul(a_evidence, tf.transpose(G)), name='calculate_xhat')
     # changed new_evidence to evidence to test the variability of accumulation
-    return X_hat, new_evidence, accumulated_evidence
+    return X_hat, accumulated_evidence, sample_ax
 
 
 from tensorflow.python.framework import ops
@@ -157,67 +164,69 @@ def training(filenames_train):
     filename_queue = tf.train.string_input_producer([filenames_train])
     # use read_and decode to retrieve tensors after casting and reshaping
     x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,\
-        out_yvel,out_xacc, out_yacc,time_after_stim,block = read_and_decode(filename_queue)  
+        out_yvel,out_xacc, out_yacc,time_after_stim,block,pos, prev_pos = read_and_decode(filename_queue)  
 
     # create a batch to train the model
     batch = tf.train.batch([x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,
-                            out_x,out_y,out_xvel,out_yvel,out_xacc,out_yacc, time_after_stim], 
-                           batch_size=1, capacity=2000, num_threads=1)
+                            out_x,out_y,out_xvel,out_yvel,out_xacc,out_yacc, time_after_stim, block,pos, prev_pos], 
+                           batch_size=1, capacity=20000, num_threads=1)
 
     # variables to feed from queue
     # input vector 
-    X = tf.placeholder(tf.float32, shape=[1,4], name='input_vector') 
+    X = tf.placeholder(tf.float64, shape=[1,4], name='input_vector') 
     # control vector
-    a = tf.placeholder(tf.float32, shape=[1,2], name='a')
+    a = tf.placeholder(tf.float64, shape=[1,2], name='a')
     # Prediction vector to compare loss
-    X_pred = tf.placeholder(tf.float32, shape=[1, 4], name='pred_vector')
+    X_pred = tf.placeholder(tf.float64, shape=[1, 4], name='pred_vector')
     # Previous control vector to update model state effectively
-    a_prev = tf.placeholder(tf.float32, shape=[1,2], name='a_prev')
+    a_prev = tf.placeholder(tf.float64, shape=[1,2], name='a_prev')
     # A time based interval when stimulus comes on
-    timer_stim = tf.placeholder(tf.int32, shape=[1,1], name='timer_stim')
-
+    timer_stim = tf.placeholder(tf.int64, shape=[1,1], name='timer_stim')
+    pos1 = tf.placeholder(tf.int64, shape=[1,1], name='pos1' )
+    pos2 = tf.placeholder(tf.int64, shape=[1,1], name='pos2' )
 
 
     # ------------- Model Parmeters -------------
     # initialization for transition matrix F
-    f_init = tf.constant([[1,0,1,0],[0,1,0,1],[0,0,1,0],[0,0,0,1]], dtype=tf.float32)
+    f_init = tf.constant([[1,0,1,0],[0,1,0,1],[0,0,1,0],[0,0,0,1]], dtype=tf.float64)
     # transition matrix F
-    F = tf.get_variable('F', dtype=tf.float32, initializer=f_init)
+    F = tf.get_variable('F', dtype=tf.float64, initializer=f_init)
 
     # initialization for control vector G
-    g_init = tf.constant([[1,0],[0,1],[1,0],[0,1]], dtype=tf.float32)
+    g_init = tf.constant([[1,0],[0,1],[1,0],[0,1]], dtype=tf.float64)
     # control vector G which controls accumulated evidence affecting acceleration 
-    G = tf.get_variable('G', dtype=tf.float32, initializer=g_init)
+    G = tf.get_variable('G', dtype=tf.float64, initializer=g_init)
     # the maximum change in acceleration available given full evidence
-    a_max = tf.get_variable('a_max', shape=(1,2), dtype=tf.float32, 
+    a_max = tf.get_variable('a_max', shape=(1,2), dtype=tf.float64, 
                             initializer = tf.random_normal_initializer())
 
-    evidence = tf.get_variable('ev', shape=(1), dtype=tf.float32, 
+    evidence = tf.get_variable('ev', shape=(1), dtype=tf.float64, 
                            initializer = tf.random_normal_initializer())
 
-    delay_var = tf.get_variable('delay_var', shape=(1), dtype=tf.int32, 
+    delay_var = tf.get_variable('delay_var', shape=(1), dtype=tf.int64, 
                            initializer = tf.constant_initializer(30))
-    weight_evidence = tf.get_variable('weight_evidence', shape=(1,2), dtype=tf.float32, 
+    weight_evidence = tf.get_variable('weight_evidence', shape=(1,2), dtype=tf.float64, 
                            initializer = tf.random_normal_initializer())
 
-    mu = tf.get_variable('mu', shape=(1), dtype=tf.float32, 
+    mu = tf.get_variable('mu', shape=(1), dtype=tf.float64, 
                            initializer = tf.random_normal_initializer())
-    sigma = tf.get_variable('sigma', shape=(1), dtype=tf.float32, 
+    sigma = tf.get_variable('sigma', shape=(1), dtype=tf.float64, 
                            initializer = tf.random_normal_initializer())
 
+    
     evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
-    new_evidence = evidence
+    new_evidence = tf.get_variable('new_evidence', shape=(3,3,2), dtype=tf.float64, 
+                            initializer = tf.random_normal_initializer())
 
-    X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence, weight_evidence)
+    X_hat, accumulated_evidence, stochastic_evidence_val = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence, weight_evidence, pos1, pos2)
 
-    loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
+    loss = tf.norm( tf.subtract(X_pred, X_hat), ord=2)
     
     # operation train minimizes the loss function
     #train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
     
-
     optimizer = tf.train.AdamOptimizer(1e-3)
-    grads_and_vars = optimizer.compute_gradients(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
+    grads_and_vars = optimizer.compute_gradients(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var, weight_evidence, new_evidence])
     train = optimizer.apply_gradients(grads_and_vars)
 
     # intialize a saver to save trainmed model variables
@@ -225,21 +234,25 @@ def training(filenames_train):
     min_loss = 1e20
     print("\n"*4+"*"*10+"Running Graph with a session"+"*"*10+"\n"*4)
 
+    prev_block = 1
+
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         loss_val = np.power(10.0,10.0)
         threshold = 0.1
         coords = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coords)
+        
         count = 1
         num_records = sum(1 for _ in tf.python_io.tf_record_iterator(filenames_train))
         #while loss_val > threshold and count < 5000:
         while loss_val > threshold and count < 100:
             all_loss_values = []
-            for idx in range(num_records):
+            #for idx in range(num_records):
+            for idx in range(20000):
 
                 x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,\
-                        out_xvel,out_yvel,out_xacc,out_yacc,time_after_stim = sess.run(batch)
+                        out_xvel,out_yvel,out_xacc,out_yacc,time_after_stim, block, pos, prev_pos = sess.run(batch)
                 
                 
                 _,X_hat_val,loss_val = sess.run([train,X_hat,loss],  
@@ -247,9 +260,9 @@ def training(filenames_train):
                                             a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
                                             a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
-                                            timer_stim : np.array([[ time_after_stim[0,0] ]]) })
-
-
+                                            timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
+                                            pos1 :  np.array([[ prev_pos[0,0] ]]),
+                                            pos2 : np.array([[ pos[0,0] ]]) })
                 if idx%10000 == 0:
                     print("Processing record : ", idx,"\n")
                     
@@ -258,9 +271,10 @@ def training(filenames_train):
                     print(sess.run(X))
                     print(sess.run(F))
                     print("loss for {} value is {}".format(X_hat_val, loss_val))
-                
+                #print("loss value : {} ".format(loss_val) )
+
                 all_loss_values.append(loss_val)
-                
+                prev_block = block
                 
             loss_val = sess.run(tf.reduce_mean(all_loss_values))
             if loss_val < min_loss:
@@ -270,9 +284,9 @@ def training(filenames_train):
             print("{} : loss value is {}".format(count,loss_val))
             count = count + 1
         
-        
         coords.request_stop()
         coords.join(threads)
+        sess.close()
         
     return all_loss_values
 
@@ -281,29 +295,30 @@ def testing(filenames_test, fname):
 
     # create a string input producer to read the tfrecord
     filename_queue = tf.train.string_input_producer([filenames_test])
+    num_records = sum(1 for _ in tf.python_io.tf_record_iterator(filenames_test))
 
     # use read_and decode to retrieve tensors after casting and reshaping
     x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,out_xvel,\
-        out_yvel,out_xacc, out_yacc,time_after_stim, block = read_and_decode(filename_queue)  
+        out_yvel,out_xacc, out_yacc,time_after_stim, block,pos, prev_pos = read_and_decode(filename_queue)  
 
     # create a batch to read input one after another
     batch = tf.train.batch([x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,
-                            out_x,out_y,out_xvel,out_yvel,out_xacc,out_yacc, time_after_stim], 
-                           batch_size=1, capacity=200, num_threads=1)
+                            out_x,out_y,out_xvel,out_yvel,out_xacc,out_yacc, time_after_stim, block, pos, prev_pos], 
+                           batch_size=1, capacity=10000, num_threads=1)
 
 
     # variables to feed from queue
     # input vector 
-    X = tf.placeholder(tf.float32, shape=[1,4], name='input_vector') 
+    X = tf.placeholder(tf.float64, shape=[1,4], name='input_vector') 
     # control vector
-    a = tf.placeholder(tf.float32, shape=[1,2], name='acceleration')
+    a = tf.placeholder(tf.float64, shape=[1,2], name='acceleration')
     # Prediction vector to compare loss
-    X_pred = tf.placeholder(tf.float32, shape=[1, 4], name='pred_vector')
+    X_pred = tf.placeholder(tf.float64, shape=[1, 4], name='pred_vector')
     # Previous control vector to update model state effectively
-    a_prev = tf.placeholder(tf.float32, shape=[1,2], name='acceleration_prev')
+    a_prev = tf.placeholder(tf.float64, shape=[1,2], name='acceleration_prev')
     # A time based interval when stimulus comes on
-    timer_stim = tf.placeholder(tf.int32, shape=[1,1], name='timer_stim')
-    
+    timer_stim = tf.placeholder(tf.int64, shape=[1,1], name='timer_stim')
+
     # create a session to launch the computational graph
     with tf.Session() as sess:
         # Restore model saved from training
@@ -321,24 +336,25 @@ def testing(filenames_test, fname):
         mu = graph.get_tensor_by_name("mu:0")
         sigma = graph.get_tensor_by_name("sigma:0")
         weight_evidence = graph.get_tensor_by_name("weight_evidence:0")
-
+        new_evidence = graph.get_tensor_by_name("new_evidence:0")
+        pos1 = graph.get_tensor_by_name("pos1:0")
+        pos2 = graph.get_tensor_by_name("pos2:0")
         # Distribution to sample from
         evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
-        new_evidence = evidence
+        
 
-        X_hat, new_evidence, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence, weight_evidence)
+        X_hat, accumulated_evidence, stochastic_evidence_val = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var, new_evidence, weight_evidence, pos1, pos2)
         #X_hat, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var)
         
         loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
 
-        num_records = sum(1 for _ in tf.python_io.tf_record_iterator(filenames_test))
 
         print("Restored Model from checkpoint")
 
         coords = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coords)
 
-        print("Stared queue Runners")
+        print("Started queue Runners")
 
         all_loss_values = np.array([])
         all_X_hat = np.zeros([1, 4])
@@ -347,21 +363,27 @@ def testing(filenames_test, fname):
 
         for idx in range(num_records):
             x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,\
-                        out_xvel,out_yvel,out_xacc,out_yacc,time_after_stim = sess.run(batch)
-            X_val,X_hat_val,loss_val,evidence_val = sess.run([X_pred,X_hat,loss, accumulated_evidence],  
+                        out_xvel,out_yvel,out_xacc,out_yacc,time_after_stim, block, pos, prev_pos = sess.run(batch)
+
+            #print(x_acc, y_acc)
+            X_val,X_hat_val,loss_val,evidence_val, stochastic_factor = sess.run([X_pred,X_hat,loss, accumulated_evidence, stochastic_evidence_val],  
                                              feed_dict={X: [[ x_ord[0,0],y_ord[0,0],x_vel[0,0],y_vel[0,0] ]], 
                                              a: [[ x_acc[0,0], y_acc[0,0] ]], 
                                              X_pred: [[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]],
-                                             a_prev: [[ x_acc[0,0], y_acc[0,0] ]],
-                                             timer_stim : [[ time_after_stim[0,0] ]] })
+                                             a_prev: [[ out_xacc[0,0], out_yacc[0,0] ]],
+                                             timer_stim : [[ time_after_stim[0,0] ]],
+                                             pos1 :  np.array([[ prev_pos[0,0] ]]),
+                                             pos2 : np.array([[ pos[0,0] ]]) })
             
             if idx%10000 == 0:
                 print("Processing record : ", idx,"\n")
 
             if np.isnan(loss_val):
-                print(sess.run(a))
-                print(sess.run(X))
-                print(sess.run(F))
+                print(X_hat_val)
+                print(X_val)
+                print(evidence_val, stochastic_factor)
+                print( 1 - np.exp(-evidence_val*stochastic_factor))
+                
                 print("loss for {} value is {}".format(X_hat_val, loss_val))
 
             all_loss_values = np.append( all_loss_values, np.array([loss_val]), axis=0 )
@@ -391,7 +413,7 @@ if __name__ == "__main__":
     for subject in filenames_train:
         print(subject)
         training(subject)
-    
+
 
     # Run testing using the stored checkpoint #
     print("="*10+"\tTesting Model\t"+"="*10+"\n"*2)
