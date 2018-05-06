@@ -187,7 +187,7 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
             }))
             
             timer = timer+1
-            if (idx < 10000) or (idx >= (len(period)-10000)) :
+            if (idx <= 15000) :
                 trainWriter.write(example.SerializeToString())
             testWriter.write(example.SerializeToString())
     

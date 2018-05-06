@@ -109,13 +109,14 @@ def model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, time_after_stim, d
     output : X_hat - prediction for the next time point
              new_evidence - accumulated control vector and noise returned from current measurements
              accumulated_evidence - accumulated control and noise returned for later processing
+
     """
 
     """
     NK : 04/16/2018 - Add two stages in process for detection and identification
     detection - process to initialize the movement
     identifiaction - process to correct the movement
-    These would depend on the time for previous trial
+    These should depend on the time for previous trial
     """
 
     # a_prev = tf.stop_gradient(a_prev)
