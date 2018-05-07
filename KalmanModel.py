@@ -163,8 +163,9 @@ def training(filenames_train):
     # create a batch to train the model
     batch = tf.train.batch([x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,
                             out_x,out_y,out_xvel,out_yvel,out_xacc,out_yacc, time_after_stim], 
-                           batch_size=1, capacity=2000, num_threads=1)
-
+                           batch_size=1, capacity=20000, num_threads=1)
+    print(batch)
+    
     # variables to feed from queue
     # input vector 
     X = tf.placeholder(tf.float32, shape=[1,4], name='input_vector') 
@@ -237,7 +238,7 @@ def training(filenames_train):
         #while loss_val > threshold and count < 5000:
         while loss_val > threshold and count < 100:
             all_loss_values = []
-            for idx in range(num_records):
+            for idx in range(10000):
 
                 x_ord,y_ord,x_vel,y_vel,x_acc,y_acc,out_x,out_y,\
                         out_xvel,out_yvel,out_xacc,out_yacc,time_after_stim = sess.run(batch)
