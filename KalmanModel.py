@@ -186,21 +186,29 @@ class sequenceModel:
 
 
     def getLoss(self,sess, batch, train, X_hat, loss):
-        self.x_ord, self.y_ord, self.x_vel, self.y_vel, self.x_acc, self.y_acc, self.out_x, self.out_y,\
-        self.out_xvel, self.out_yvel, self.out_xacc, self.out_yacc, self.time_after_stim, self.block, self.pos, self.prev_pos = sess.run(batch)
+        
+        x_ord, y_ord, x_vel, y_vel, x_acc, y_acc, out_x, out_y,\
+        out_xvel, out_yvel, out_xacc, out_yacc, time_after_stim, block, pos, prev_pos = sess.run(batch)
                     
-                    
-        _,X_hat_val,loss_val = sess.run([train,X_hat,loss],  
+        
+        test = np.array([[ x_acc[0,0], y_acc[0,0] ]])
+        print("\n"*10)
+        print("Debug: ",test)
+        print("Debug:",test.shape)
+        print("Debug:",test.dtype)
+        print("\n"*10)
+
+        _,X_hat_val,loss_val, X_val = sess.run([train,X_hat,loss, self.X],  
                                     feed_dict={
-                                        self.X : np.array([[ self.x_ord[0,0], self.y_ord[0,0], self.x_vel[0,0], self.y_vel[0,0] ]]), 
-                                        self.a : np.array([[ self.x_acc[0,0], self.y_acc[0,0] ]]),
-                                        self.X_pred : np.array([[ self.out_x[0,0], self.out_y[0,0], self.out_xvel[0,0], self.out_yvel[0,0] ]]),
-                                        self.a_prev : np.array([[ self.x_acc[0,0], self.y_acc[0,0] ]]),
-                                        self.timer_stim : np.array([[ self.time_after_stim[0,0] ]]) ,
-                                        self.pos1 :  np.array([[ self.prev_pos[0,0] ]]),
-                                        self.pos2 : np.array([[ self.pos[0,0] ]]) 
+                                        self.X : np.array([[ x_ord[0,0], y_ord[0,0], x_vel[0,0], y_vel[0,0] ]]), 
+                                        self.a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
+                                        self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
+                                        self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
+                                        self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
+                                        self.pos1 :  np.array([[ prev_pos[0,0] ]]),
+                                        self.pos2 : np.array([[ pos[0,0] ]]) 
                                     })
-        return X_hat_val, loss_val
+        return X_hat_val, loss_val, X_val
 
     def training(self, filenames_train):
         """
@@ -221,11 +229,7 @@ class sequenceModel:
             X_hat, accumulated_evidence, stochastic_evidence_val = self.model()
             loss = tf.norm( tf.subtract(self.X_pred, X_hat), ord=2)
 
-            # create a batch to train the model
-            batch = tf.train.batch([self.x_ord, self.y_ord, self.x_vel, self.y_vel, self.x_acc, self.y_acc,
-                                    self.out_x, self.out_y, self.out_xvel, self.out_yvel, self.out_xacc, self.out_yacc, 
-                                    self.time_after_stim, self.block, self.pos, self.prev_pos], 
-                                   batch_size=10000, capacity=20000, num_threads=1)
+
             
         # operation train minimizes the loss function
         #train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
@@ -245,8 +249,17 @@ class sequenceModel:
         with tf.Session() as sess:
             sess.run(tf.local_variables_initializer())
             sess.run(tf.global_variables_initializer())
-            coords = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(sess=sess, coord=coords)
+            
+            with tf.name_scope('seqModel'):
+                # create a batch to train the model
+                batch = tf.train.batch([self.x_ord, self.y_ord, self.x_vel, self.y_vel, self.x_acc, self.y_acc,
+                                self.out_x, self.out_y, self.out_xvel, self.out_yvel, self.out_xacc, self.out_yacc, 
+                                self.time_after_stim, self.block, self.pos, self.prev_pos], 
+                                batch_size=1, capacity=20000, num_threads=1)
+
+                coords = tf.train.Coordinator()
+                threads = tf.train.start_queue_runners(sess=sess, coord=coords)
+ 
             
             loss_val = np.power(10.0,10.0)
             threshold = 0.1
@@ -260,14 +273,10 @@ class sequenceModel:
                 all_X_val = np.zeros([1, 4])
                 all_evidence = np.zeros([1,2])
                 #for idx in range(num_records):
-                for idx in range(10):
-                    print(sess)
-                    for item in batch:
-                        print(item)
-                    #sys.exit()
+                for idx in range(num_records):
                     with tf.name_scope('seqModel'):
-                        X_hat_val, loss_val = self.getLoss(sess, batch, train, X_hat, loss)
-
+                        X_hat_val, loss_val, X_val = self.getLoss(sess, batch, train, X_hat, loss)
+                        evidence_val = sess.run(accumulated_evidence)
                     if idx%10000 == 0:
                         print("Processing record : ", idx,"\n")
                         
@@ -359,8 +368,8 @@ class sequenceModel:
             all_evidence = np.zeros([1,2])
 
             for idx in range(num_records):
-
-                X_hat_val,loss_val = self.getLoss(sess)
+                X_hat_val,loss_val, X_val = self.getLoss(sess)
+                evidence_val = sess.run(accumulated_evidence)
                 
                 if idx%10000 == 0:
                     print("Processing record : ", idx,"\n")

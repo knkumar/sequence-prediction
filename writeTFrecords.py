@@ -158,6 +158,8 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
                 timer = 1
                 trial_id_prev = trial_id[idx]
                 prev_pos = pos[idx]
+                print(idx,trial_id_prev)
+                print(prev_pos)
             
             # generate example with features
             example = tf.train.Example(features=tf.train.Features(feature={
