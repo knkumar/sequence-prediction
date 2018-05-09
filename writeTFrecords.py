@@ -1,7 +1,3 @@
-
-
-
-
 import numpy as np
 import tensorflow as tf
 import pandas as pd
@@ -132,21 +128,21 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         trial_id = data_cond['Trial_id']
         
         # process input data to create dervied vectors
-        x_diff = np.append(0,np.diff(x_ord))
-        y_diff = np.append(0,np.diff(y_ord))
+        x_diff = np.append(0.0,np.diff(x_ord))
+        y_diff = np.append(0.0,np.diff(y_ord))
         thetas = np.arctan2(y_diff, x_diff)
         speed = np.sqrt((x_diff*x_diff) + (y_diff*y_diff))
         x_vel = speed * np.cos(thetas)
         y_vel = speed * np.sin(thetas)
-        x_acc = np.append(0, np.diff(x_vel))
-        y_acc = np.append(0, np.diff(y_vel))
+        x_acc = np.append(0.0, np.diff(x_vel))
+        y_acc = np.append(0.0, np.diff(y_vel))
         
         # store data from future in the same example to feed into algorithm
         out_x = np.append(x_ord[prediction_time:],[-1]*prediction_time)
         out_y = np.append(y_ord[prediction_time:],[-1]*prediction_time)
 
-        out_xacc = np.append([0]*prediction_time, x_acc[prediction_time:])
-        out_yacc = np.append([0]*prediction_time, y_acc[prediction_time:])
+        out_xacc = np.append([0.0]*prediction_time, x_acc[0:(len(x_acc)-prediction_time)] )
+        out_yacc = np.append([0.0]*prediction_time, y_acc[0:(len(y_acc)-prediction_time)] )
 
         out_xvel = np.append(x_vel[prediction_time:], [-1]*prediction_time)
         out_yvel = np.append(y_vel[prediction_time:], [-1]*prediction_time)
@@ -155,12 +151,15 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         trial_id_prev = 0
         timer = 0
     
-        # generate an example for each time
+        # generate an example for each time point
         for idx in range(len(period)):
             # schedule new information for events
             if trial_id_prev != trial_id[idx]:
                 timer = 1
                 trial_id_prev = trial_id[idx]
+                prev_pos = pos[idx]
+                print(idx,trial_id_prev)
+                print(prev_pos)
             
             # generate example with features
             example = tf.train.Example(features=tf.train.Features(feature={
@@ -183,7 +182,8 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
                 'out_yvel' : _float_feature(out_yvel[idx]), # 17
                 'out_xacc' : _float_feature(out_xacc[idx]), # 18
                 'out_yacc' : _float_feature(out_yacc[idx]),  # 19
-                'time_after_stim' : _int64_feature(timer)   # 20
+                'time_after_stim' : _int64_feature(timer),   # 20
+                'prev_pos' : _int64_feature(prev_pos)
             }))
             
             timer = timer+1
