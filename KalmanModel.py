@@ -25,6 +25,7 @@ class sequenceModel:
         self.a_prev = tf.placeholder(tf.float64, shape=[1,2], name='a_prev')
         # A time based interval when stimulus comes on
         self.timer_stim = tf.placeholder(tf.int64, shape=[1,1], name='timer_stim')
+        self.foil_ind = tf.placeholder(tf.int64, shape=[1,1], name='foil_ind' )
         # Travelling from pos1 to pos2
         self.pos1 = tf.placeholder(tf.int64, shape=[1,1], name='pos1' )
         self.pos2 = tf.placeholder(tf.int64, shape=[1,1], name='pos2' )
@@ -54,6 +55,8 @@ class sequenceModel:
                                initializer = tf.constant_initializer(30))
 
         self.weight_evidence = tf.get_variable('weight_evidence', shape=(1,2), dtype=tf.float64, 
+                               initializer = tf.random_normal_initializer())
+        self.weight_evidence_pre = tf.get_variable('weight_evidence_pre', shape=(1,2), dtype=tf.float64, 
                                initializer = tf.random_normal_initializer())
 
         # parametes for normal distribution for stochastic noise component
@@ -169,21 +172,34 @@ class sequenceModel:
 
         # a_prev = tf.stop_gradient(a_prev)
         print("Running Model")
-        if self.time_after_stim == self.delay_var:
-            a_prev_val = self.a_prev
-            #a_prev_val = self.new_evidence[self.foil_ind, self.pos1, self.pos2,:] 
-            stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
-        else:
-            stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
-            a_prev_val = self.a_prev
+        print(self.time_after_stim, self.delay_var)
+        #print(tf.reshape(tf.equal(self.time_after_stim, self.delay_var), []))
+        # with tf.Session() as sess1:
+        #     print(self.foilInd.eval())
+        #     print(self.pos1.eval())
+        #     print(self.pos2.eval())
+        print(self.new_evidence[tf.reshape(self.foilInd,[]), tf.reshape(self.pos1,[]), tf.reshape(self.pos2,[]),:])
+        #print(self.a_prev)
+        a_prev_val = tf.cond( tf.reshape(tf.equal(self.time_after_stim, self.delay_var), []) , 
+            lambda: self.new_evidence[tf.reshape(self.foilInd,[]), tf.reshape(self.pos1,[]), tf.reshape(self.pos2,[]),:],
+            lambda: self.a_prev )
+            
 
+        stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
         a_x = tf.maximum(self.zero, a_prev_val)
-        sample_ax = tf.multiply(a_x,stochastic_evidence)
+        sample_ax = tf.multiply(a_x,self.evidence)
         accumulated_evidence = tf.subtract(self.one ,  tf.cast(tf.exp(tf.negative( sample_ax )), tf.float64) )
+
+        # time difference from event identification
         time_delta = tf.cast( tf.subtract(self.delay_var, self.time_after_stim), tf.float64)
-        a_baseline = tf.multiply(self.a, tf.multiply(tf.tanh(time_delta), self.weight_evidence) )
+        a_baseline = tf.cond( tf.reshape(tf.less(self.time_after_stim, self.delay_var), []), 
+            lambda: tf.multiply(self.a, tf.sin(tf.multiply(time_delta, self.weight_evidence_pre)) ) , 
+            lambda: tf.multiply(self.a, tf.sin(tf.multiply(time_delta, self.weight_evidence)) ) )
+            
         a_evidence = tf.add(a_baseline , tf.multiply( self.a_max, accumulated_evidence, name='aev'))
         X_hat = tf.add(tf.matmul(self.X, self.F), tf.matmul(a_evidence, tf.transpose(self.G)), name='calculate_xhat')
+
+        print("Return model\n")
         # changed new_evidence to evidence to test the variability of accumulation
         return X_hat, accumulated_evidence, sample_ax
 
@@ -191,7 +207,7 @@ class sequenceModel:
     def getLoss(self,sess, batch, train, X_hat, loss, accumulated_evidence):
         
         x_ord, y_ord, x_vel, y_vel, x_acc, y_acc, out_x, out_y,\
-        out_xvel, out_yvel, out_xacc, out_yacc, time_after_stim, block, pos, prev_pos = sess.run(batch)        
+        out_xvel, out_yvel, out_xacc, out_yacc, time_after_stim, block, pos, prev_pos, foil_ind = sess.run(batch)        
 
         _,X_hat_val,loss_val, X_val, evidence_val = sess.run([train,X_hat,loss, self.X, accumulated_evidence],  
                                     feed_dict={
@@ -201,7 +217,8 @@ class sequenceModel:
                                         self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                         self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
                                         self.pos1 :  np.array([[ prev_pos[0,0] ]]),
-                                        self.pos2 : np.array([[ pos[0,0] ]]) 
+                                        self.pos2 : np.array([[ pos[0,0] ]]),
+                                        self.foil_ind : np.array( [[ foil_ind[0,0] ]])
                                     })
         return X_hat_val, loss_val, X_val, evidence_val
 
@@ -227,12 +244,13 @@ class sequenceModel:
 
             
         # operation train minimizes the loss function
-        #train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
+        train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[self.F, self.G, self.a_max, self.evidence, self.mu, self.sigma, 
+                                                                self.delay_var, self.weight_evidence, self.weight_evidence_pre, self.new_evidence])
         
-        optimizer = tf.train.AdamOptimizer(1e-3)
-        grads_and_vars = optimizer.compute_gradients(loss, var_list=[self.F, self.G, self.a_max, self.evidence, self.mu, self.sigma, 
-                                                                self.delay_var, self.weight_evidence, self.new_evidence])
-        train = optimizer.apply_gradients(grads_and_vars)
+        #optimizer = tf.train.AdamOptimizer(1e-3)
+        #grads_and_vars = optimizer.compute_gradients(loss, var_list=[self.F, self.G, self.a_max, self.evidence, self.mu, self.sigma, 
+        #                                                        self.delay_var, self.weight_evidence, self.weight_evidence_pre, self.new_evidence])
+        #train = optimizer.apply_gradients(grads_and_vars)
 
         # intialize a saver to save trainmed model variables
         saver = tf.train.Saver()
@@ -249,7 +267,7 @@ class sequenceModel:
                 # create a batch to train the model
                 batch = tf.train.batch([self.x_ord, self.y_ord, self.x_vel, self.y_vel, self.x_acc, self.y_acc,
                                 self.out_x, self.out_y, self.out_xvel, self.out_yvel, self.out_xacc, self.out_yacc, 
-                                self.time_after_stim, self.block, self.pos, self.prev_pos], 
+                                self.time_after_stim, self.block, self.pos, self.prev_pos, self.foilInd], 
                                 batch_size=1, capacity=20000, num_threads=1)
 
                 coords = tf.train.Coordinator()
@@ -271,7 +289,6 @@ class sequenceModel:
                 for idx in range(num_records):
                     with tf.name_scope('seqModel'):
                         X_hat_val, loss_val, X_val, evidence_val = self.getLoss(sess, batch, train, X_hat, loss, accumulated_evidence)
-                        #evidence_val = sess.run(accumulated_evidence)
                     if idx%10000 == 0:
                         print("Processing record : ", idx,"\n")
 
@@ -340,9 +357,8 @@ class sequenceModel:
             self.mu = graph.get_tensor_by_name("mu:0")
             self.sigma = graph.get_tensor_by_name("sigma:0")
             self.weight_evidence = graph.get_tensor_by_name("weight_evidence:0")
+            self.weight_evidence_pre = graph.get_tensor_by_name("weight_evidence_pre:0")
             self.new_evidence = graph.get_tensor_by_name("new_evidence:0")
-            self.pos1 = graph.get_tensor_by_name("pos1:0")
-            self.pos2 = graph.get_tensor_by_name("pos2:0")
             self.foil_ind = graph.get_tensor_by_name("foilInd:0")
             # Distribution to sample from
             self.evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
@@ -373,8 +389,7 @@ class sequenceModel:
                     print(X_hat_val)
                     print(X_val)
                     print(evidence_val, stochastic_factor)
-                    print( 1 - np.exp(-evidence_val*stochastic_factor))
-                    
+                    print( 1 - np.exp(-evidence_val*stochastic_factor))                    
                     print("loss for {} value is {}".format(X_hat_val, loss_val))
 
                 all_loss_values = np.append( all_loss_values, np.array([loss_val]), axis=0 )
