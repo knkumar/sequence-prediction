@@ -142,7 +142,7 @@ class sequenceModel:
         self.time_after_stim  = self.cast_and_reshape(features['time_after_stim'], tf.int64, [1])
         self.prev_pos  = self.cast_and_reshape(features['prev_pos'], tf.int64, [1])     
 
-    
+
 
 
     def model(self):
@@ -233,6 +233,7 @@ class sequenceModel:
 
         # reset the graph for each subject
 
+
         # create a string input producer to read the tfrecord
         filename_queue = tf.train.string_input_producer([filenames_train])
         # use read_and decode to retrieve tensors after casting and reshaping
@@ -240,7 +241,6 @@ class sequenceModel:
             self.read_and_decode(filename_queue)  
             X_hat, accumulated_evidence, stochastic_evidence_val = self.model()
             loss = tf.norm( tf.subtract(self.X_pred, X_hat), ord=2)
-
 
             
         # operation train minimizes the loss function
@@ -378,9 +378,11 @@ class sequenceModel:
             all_X_val = np.zeros([1, 4])
             all_evidence = np.zeros([1,2])
 
+
             for idx in range(num_records):
                 X_hat_val,loss_val, X_val = self.getLoss(sess)
                 evidence_val = sess.run(accumulated_evidence)
+
                 
                 if idx%10000 == 0:
                     print("Processing record : ", idx,"\n")
