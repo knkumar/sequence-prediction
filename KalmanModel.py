@@ -6,6 +6,12 @@ from tensorflow.python.framework import ops
 import sys
 
 
+"""
+    NK : 13/05/2018
+    need to fit an acceleration dependent on time since onset
+    the dynamics are a little different for each trial, so it will be an average fit
+"""
+
 class sequenceModel:
 
     def __init__(self):
@@ -170,8 +176,8 @@ class sequenceModel:
         # a_prev = tf.stop_gradient(a_prev)
         print("Running Model")
         if self.time_after_stim == self.delay_var:
-            a_prev_val = self.a_prev
-            #a_prev_val = self.new_evidence[self.foil_ind, self.pos1, self.pos2,:] 
+            #a_prev_val = self.a_prev
+            a_prev_val = self.new_evidence[self.foil_ind, self.pos1, self.pos2,:] 
             stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
         else:
             stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
@@ -193,16 +199,29 @@ class sequenceModel:
         x_ord, y_ord, x_vel, y_vel, x_acc, y_acc, out_x, out_y,\
         out_xvel, out_yvel, out_xacc, out_yacc, time_after_stim, block, pos, prev_pos = sess.run(batch)        
 
-        _,X_hat_val,loss_val, X_val, evidence_val = sess.run([train,X_hat,loss, self.X, accumulated_evidence],  
-                                    feed_dict={
-                                        self.X : np.array([[ x_ord[0,0], y_ord[0,0], x_vel[0,0], y_vel[0,0] ]]), 
-                                        self.a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
-                                        self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
-                                        self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
-                                        self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
-                                        self.pos1 :  np.array([[ prev_pos[0,0] ]]),
-                                        self.pos2 : np.array([[ pos[0,0] ]]) 
-                                    })
+        if train:
+            _,X_hat_val,loss_val, X_val, evidence_val = sess.run([train,X_hat,loss, self.X, accumulated_evidence],  
+                                        feed_dict={
+                                            self.X : np.array([[ x_ord[0,0], y_ord[0,0], x_vel[0,0], y_vel[0,0] ]]), 
+                                            self.a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
+                                            self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
+                                            self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
+                                            self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
+                                            self.pos1 :  np.array([[ prev_pos[0,0] ]]),
+                                            self.pos2 : np.array([[ pos[0,0] ]]) 
+                                        })
+        else:
+            X_hat_val,loss_val, X_val, evidence_val = sess.run([X_hat,loss, self.X, accumulated_evidence],  
+                                        feed_dict={
+                                            self.X : np.array([[ x_ord[0,0], y_ord[0,0], x_vel[0,0], y_vel[0,0] ]]), 
+                                            self.a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
+                                            self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
+                                            self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
+                                            self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
+                                            self.pos1 :  np.array([[ prev_pos[0,0] ]]),
+                                            self.pos2 : np.array([[ pos[0,0] ]]) 
+                                        })
+
         return X_hat_val, loss_val, X_val, evidence_val
 
     def training(self, filenames_train, fname):
@@ -228,7 +247,6 @@ class sequenceModel:
             
         # operation train minimizes the loss function
         #train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
-        
         optimizer = tf.train.AdamOptimizer(1e-3)
         grads_and_vars = optimizer.compute_gradients(loss, var_list=[self.F, self.G, self.a_max, self.evidence, self.mu, self.sigma, 
                                                                 self.delay_var, self.weight_evidence, self.new_evidence])
@@ -244,7 +262,8 @@ class sequenceModel:
         with tf.Session() as sess:
             sess.run(tf.local_variables_initializer())
             sess.run(tf.global_variables_initializer())
-            
+            num_records = sum(1 for _ in tf.python_io.tf_record_iterator(filenames_train))
+
             with tf.name_scope('seqModel'):
                 # create a batch to train the model
                 batch = tf.train.batch([self.x_ord, self.y_ord, self.x_vel, self.y_vel, self.x_acc, self.y_acc,
@@ -259,10 +278,10 @@ class sequenceModel:
             loss_val = np.power(10.0,10.0)
             threshold = 0.1
             count = 1
-            num_records = sum(1 for _ in tf.python_io.tf_record_iterator(filenames_train))
+            
 
             #while loss_val > threshold and count < 5000:
-            while loss_val > threshold and count < 200:
+            while loss_val > threshold and count < 100:
                 all_loss_values = np.array([])
                 all_X_hat = np.zeros([1, 4])
                 all_X_val = np.zeros([1, 4])
@@ -272,13 +291,12 @@ class sequenceModel:
                     with tf.name_scope('seqModel'):
                         X_hat_val, loss_val, X_val, evidence_val = self.getLoss(sess, batch, train, X_hat, loss, accumulated_evidence)
                         #evidence_val = sess.run(accumulated_evidence)
-                    if idx%10000 == 0:
+                    if idx%1000 == 0:
                         print("Processing record : ", idx,"\n")
 
                     if np.isnan(loss_val):
-                        print(sess.run(a))
-                        print(sess.run(X))
-                        print(sess.run(F))
+                        print(sess.run(self.X))
+                        print(sess.run(self.F))
                         print("loss for {} value is {}".format(X_hat_val, loss_val))
                     #print("loss value : {} ".format(loss_val) )
 
@@ -293,12 +311,18 @@ class sequenceModel:
                     min_loss = loss_val
                     sName = filenames_train.replace(".tfrecords",".ckpt")
                     saver.save(sess,sName) # save the model as a latest_checkpoint
+                    all_X_hat = np.delete(all_X_hat,0,0)
+                    all_evidence = np.delete(all_evidence,0,0)
+                    all_X_val = np.delete(all_X_val,0,0)
+                    loss_val = sess.run(tf.reduce_mean(all_loss_values))
+
+                    np.savetxt(fname+'fitsFromModel_train.csv', all_X_hat, delimiter=',')
+                    np.savetxt(fname+'dataToFit_train.csv', all_X_val, delimiter=',')
+                    np.savetxt(fname+'evidenceFromModel_train.csv', all_evidence, delimiter=',')
                 print("{} : loss value is {}".format(count,loss_val))
                 count = count + 1
 
-            np.savetxt(fname+'fitsFromModel_train.csv', all_X_hat, delimiter=',')
-            np.savetxt(fname+'dataToFit_train.csv', all_X_val, delimiter=',')
-            np.savetxt(fname+'evidenceFromModel_train.csv', all_evidence, delimiter=',')
+            
 
             coords.request_stop()
             coords.join(threads)
@@ -307,7 +331,7 @@ class sequenceModel:
         return all_loss_values
 
     def testing(self,filenames_test, fname):
-        ops.reset_default_graph()
+        #ops.reset_default_graph()
 
         # create a string input producer to read the tfrecord
         filename_queue = tf.train.string_input_producer([filenames_test])
@@ -327,30 +351,29 @@ class sequenceModel:
         with tf.Session() as sess:
             # Restore model saved from training
             print(filenames_test)
+            sess.run(tf.local_variables_initializer())
+            sess.run(tf.global_variables_initializer())
             new_saver = tf.train.import_meta_graph(filenames_test.replace('tfrecords','ckpt.meta').replace('test','train'))
             new_saver.restore(sess, tf.train.latest_checkpoint('./data/'))
 
             # Read in model parameters from saved graph
             graph = tf.get_default_graph()
-            self.F = graph.get_tensor_by_name("F:0")
-            self.G = graph.get_tensor_by_name("G:0")
-            self.a_max = graph.get_tensor_by_name("a_max:0")
-            self.evidence = graph.get_tensor_by_name("ev:0")
-            self.delay_var = graph.get_tensor_by_name("delay_var:0")
-            self.mu = graph.get_tensor_by_name("mu:0")
-            self.sigma = graph.get_tensor_by_name("sigma:0")
-            self.weight_evidence = graph.get_tensor_by_name("weight_evidence:0")
-            self.new_evidence = graph.get_tensor_by_name("new_evidence:0")
-            self.pos1 = graph.get_tensor_by_name("pos1:0")
-            self.pos2 = graph.get_tensor_by_name("pos2:0")
-            self.foil_ind = graph.get_tensor_by_name("foilInd:0")
-            # Distribution to sample from
-            self.evidence_dist = tf.contrib.distributions.Normal(mu, sigma)
+            with tf.name_scope('seqModel'):
+                self.F = graph.get_tensor_by_name("F:0")
+                self.G = graph.get_tensor_by_name("G:0")
+                self.a_max = graph.get_tensor_by_name("a_max:0")
+                self.evidence = graph.get_tensor_by_name("ev:0")
+                self.delay_var = graph.get_tensor_by_name("delay_var:0")
+                self.mu = graph.get_tensor_by_name("mu:0")
+                self.sigma = graph.get_tensor_by_name("sigma:0")
+                self.weight_evidence = graph.get_tensor_by_name("weight_evidence:0")
+                self.new_evidence = graph.get_tensor_by_name("new_evidence:0")
+                # Distribution to sample from
+                self.evidence_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)
             
+                X_hat, accumulated_evidence, stochastic_evidence_val = self.model()
 
-            X_hat, accumulated_evidence, stochastic_evidence_val = self.model()
-            #X_hat, accumulated_evidence = model(X, a, a_max, evidence, F, G, a_prev, evidence_dist, timer_stim, delay_var)
-            loss = tf.norm(tf.subtract(X_pred, X_hat), ord=2)
+                loss = tf.norm(tf.subtract(self.X_pred, X_hat), ord=2)
 
             print("Restored Model from checkpoint")
             coords = tf.train.Coordinator()
@@ -364,9 +387,8 @@ class sequenceModel:
 
 
             for idx in range(num_records):
-                X_hat_val,loss_val, X_val = self.getLoss(sess)
-                evidence_val = sess.run(accumulated_evidence)
-
+                with tf.name_scope('seqModel'):
+                    X_hat_val, loss_val, X_val, evidence_val = self.getLoss(sess, batch, None, X_hat, loss, accumulated_evidence)
                 
                 if idx%10000 == 0:
                     print("Processing record : ", idx,"\n")
@@ -374,9 +396,7 @@ class sequenceModel:
                 if np.isnan(loss_val):
                     print(X_hat_val)
                     print(X_val)
-                    print(evidence_val, stochastic_factor)
-                    print( 1 - np.exp(-evidence_val*stochastic_factor))
-                    
+                    print(evidence_val)
                     print("loss for {} value is {}".format(X_hat_val, loss_val))
 
                 all_loss_values = np.append( all_loss_values, np.array([loss_val]), axis=0 )
@@ -403,16 +423,16 @@ if __name__ == "__main__":
     ssm = sequenceModel()
     # Run training and store the best results as a checkpoint #
     print("="*10+"\tTraining Model\t"+"="*10+"\n"*2)
-    filenames_train = glob.glob('/home/kiran/projects/Kalman/data/S10_05_19_2017*train*subjects.tfrecords')
-    for subject in filenames_train:
+    filenames_train = glob.glob('/home/kiran/projects/Kalman/data/S10_05_19_2017*train*subjects.tfrecords_block*')
+    for subject in filenames_train[16:]:
         print(subject)
-        ssm.training(subject,'')
+        ssm.training(subject, subject.replace(".tfrecords","."))
 
 
     # Run testing using the stored checkpoint #
-    print("="*10+"\tTesting Model\t"+"="*10+"\n"*2)
-    filenames_test = glob.glob('/home/kiran/projects/Kalman/data/S10_05_19_2017*test*subjects.tfrecords')
-    for subject in filenames_test:
-        print(subject)
-        print(subject.replace('tfrecords','ckpt.meta').replace('test','train'))
-        ssm.testing(subject,'')
+    # print("="*10+"\tTesting Model\t"+"="*10+"\n"*2)
+    # filenames_test = glob.glob('/home/kiran/projects/Kalman/data/S10_05_19_2017*test*subjects.tfrecords')
+    # for subject in filenames_test:
+    #     print(subject)
+    #     print(subject.replace('tfrecords','ckpt.meta').replace('test','train'))
+    #     ssm.testing(subject,'')

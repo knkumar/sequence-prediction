@@ -55,7 +55,9 @@ def processText(data, pos):
         foilRet = []
         # consistent labels for different events
         foils = {'R':1,'S':2,'Q':3}
-        
+    
+    prev_item = ''
+
     for item in data:
         # if postition is required
         if pos:
@@ -77,16 +79,15 @@ def processText(data, pos):
                 foilRet.append(0)
         else:
             # if a new event occurs
-            if item not in dataDict:
+            if prev_item != item:
                 # increment indicator variable
                 count = count +1
-                # map indicator varible to item
-                dataDict[item] = count
                 # append indicator variable to data for returning
                 dataRet.append(count)
             else:
                 # append indicator variable to data for returning
                 dataRet.append(count)
+            prev_item = item
     if pos:
         return(dataRet, foilRet, posRet)
     else:
@@ -106,7 +107,7 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
     for file in filenames:
         # numpy loadtxt for file with column names and formats
         data_cond = np.loadtxt(file,dtype={'names': ['Period', 'Block', 'Trial','Trial_id','x_ord','y_ord'],  
-                    'formats': ['S3', 'S6' ,'S6','i4', 'i4', 'i4']}, delimiter="\t",skiprows=1)
+                    'formats': ['S3', 'S7' ,'S6','i4', 'i4', 'i4']}, delimiter="\t",skiprows=1)
         # name to save TF records
         sName = file.replace('.txt','')
         saveName = sName.split("/")
@@ -115,7 +116,7 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         print(tfrecords_train_savename)
         tfrecords_test_savename = "data/"+saveName[-1]+"_test_"+tfrecords_filename
         # open recordwriters for training and testing data
-        trainWriter = tf.python_io.TFRecordWriter(tfrecords_train_savename)
+        
         testWriter = tf.python_io.TFRecordWriter(tfrecords_test_savename)
         
         # process text to convert text labels to numerical indicators
@@ -152,14 +153,19 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         timer = 0
     
         # generate an example for each time point
+        prev_block = 0
         for idx in range(len(period)):
             # schedule new information for events
+            if prev_block != block[idx]:
+                print(period[idx],block[idx])
+                trainWriter = tf.python_io.TFRecordWriter(
+                    tfrecords_train_savename+"_block"+str(period[idx])+str(block[idx]))
+
             if trial_id_prev != trial_id[idx]:
                 timer = 1
                 trial_id_prev = trial_id[idx]
                 prev_pos = pos[idx]
-                print(idx,trial_id_prev)
-                print(prev_pos)
+                
             
             # generate example with features
             example = tf.train.Example(features=tf.train.Features(feature={
@@ -187,8 +193,8 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
             }))
             
             timer = timer+1
-            if (idx <= 15000) :
-                trainWriter.write(example.SerializeToString())
+            prev_block = block[idx]
+            trainWriter.write(example.SerializeToString())
             testWriter.write(example.SerializeToString())
     
         trainWriter.close()
