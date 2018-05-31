@@ -1,8 +1,7 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.framework import ops
+#from tensorflow.python.framework import ops
 import glob
-from tensorflow.python.framework import ops
 import sys
 
 
@@ -32,8 +31,8 @@ class sequenceModel:
         # A time based interval when stimulus comes on
         self.timer_stim = tf.placeholder(tf.int64, shape=[1,1], name='timer_stim')
         # Travelling from pos1 to pos2
-        self.pos1 = tf.placeholder(tf.int64, shape=[1,1], name='pos1' )
-        self.pos2 = tf.placeholder(tf.int64, shape=[1,1], name='pos2' )
+        self.pos1 = tf.placeholder(tf.int64, shape=[], name='pos1' )
+        self.pos2 = tf.placeholder(tf.int64, shape=[], name='pos2' )
 
 
         # ------------- Model Parmeters -------------
@@ -127,7 +126,7 @@ class sequenceModel:
         self.period = self.cast_and_reshape(features['period'], tf.int64, [1])
         self.block = self.cast_and_reshape(features['block'], tf.int64, [1])
         self.stim  = self.cast_and_reshape(features['stim'], tf.int64, [1])
-        self.foilInd = self.cast_and_reshape(features['foilInd'], tf.int64, [1])
+        self.foilInd = self.cast_and_reshape(features['foilInd'], tf.int64, [])
         self.pos  = self.cast_and_reshape(features['pos'], tf.int64, [1])
         self.trial_id  = self.cast_and_reshape(features['trial_id'], tf.int64, [1])
         self.x_ord = self.cast_and_reshape(features['x_ord'], tf.float64, [1])
@@ -175,14 +174,17 @@ class sequenceModel:
 
         # a_prev = tf.stop_gradient(a_prev)
         print("Running Model")
-        if self.time_after_stim == self.delay_var:
-            #a_prev_val = self.a_prev
-            a_prev_val = self.new_evidence[self.foil_ind, self.pos1, self.pos2,:] 
-            stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
-        else:
-            stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
-            a_prev_val = self.a_prev
+        timer_eq = tf.reshape(tf.equal(self.time_after_stim,self.delay_var), [])
+        print(self.new_evidence[self.foilInd, self.pos1, self.pos2,:],"\n\n")
+        print(self.a_prev,"\n\n")
+        a_prev_val = tf.cond(timer_eq , lambda: self.new_evidence[self.foilInd, self.pos1, self.pos2,:], lambda: self.a_prev)
+        # if self.time_after_stim == self.delay_var:
+        #     #a_prev_val = self.a_prev
+        #     a_prev_val = self.new_evidence[self.foilInd, self.pos1, self.pos2,:]
+        # else:
+        #     a_prev_val = self.a_prev
 
+        stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
         a_x = tf.maximum(self.zero, a_prev_val)
         sample_ax = tf.multiply(a_x,stochastic_evidence)
         accumulated_evidence = tf.subtract(self.one ,  tf.cast(tf.exp(tf.negative( sample_ax )), tf.float64) )
@@ -207,8 +209,8 @@ class sequenceModel:
                                             self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
                                             self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
-                                            self.pos1 :  np.array([[ prev_pos[0,0] ]]),
-                                            self.pos2 : np.array([[ pos[0,0] ]]) 
+                                            self.pos1 :  np.array( prev_pos[0,0]-1 ),
+                                            self.pos2 : np.array( pos[0,0]-1 ) 
                                         })
         else:
             X_hat_val,loss_val, X_val, evidence_val = sess.run([X_hat,loss, self.X, accumulated_evidence],  
@@ -218,10 +220,9 @@ class sequenceModel:
                                             self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
                                             self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
-                                            self.pos1 :  np.array([[ prev_pos[0,0] ]]),
-                                            self.pos2 : np.array([[ pos[0,0] ]]) 
+                                            self.pos1 :  np.array( prev_pos[0,0]-1 ),
+                                            self.pos2 : np.array( pos[0,0]-1 ) 
                                         })
-
         return X_hat_val, loss_val, X_val, evidence_val
 
     def training(self, filenames_train, fname):
@@ -240,7 +241,7 @@ class sequenceModel:
         filename_queue = tf.train.string_input_producer([filenames_train])
         # use read_and decode to retrieve tensors after casting and reshaping
         with tf.name_scope('seqModel'):
-            self.read_and_decode(filename_queue)  
+            self.read_and_decode(filename_queue)
             X_hat, accumulated_evidence, stochastic_evidence_val = self.model()
             loss = tf.norm( tf.subtract(self.X_pred, X_hat), ord=2)
 
@@ -270,7 +271,6 @@ class sequenceModel:
                                 self.out_x, self.out_y, self.out_xvel, self.out_yvel, self.out_xacc, self.out_yacc, 
                                 self.time_after_stim, self.block, self.pos, self.prev_pos], 
                                 batch_size=1, capacity=20000, num_threads=1)
-
                 coords = tf.train.Coordinator()
                 threads = tf.train.start_queue_runners(sess=sess, coord=coords)
  
@@ -424,7 +424,7 @@ if __name__ == "__main__":
     # Run training and store the best results as a checkpoint #
     print("="*10+"\tTraining Model\t"+"="*10+"\n"*2)
     filenames_train = glob.glob('/home/kiran/projects/Kalman/data/S10_05_19_2017*train*subjects.tfrecords_block*')
-    for subject in filenames_train[16:]:
+    for subject in filenames_train[:]:
         print(subject)
         ssm.training(subject, subject.replace(".tfrecords","."))
 
