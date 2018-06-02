@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import pandas as pd
 import glob
-filenames = glob.glob('/home/kiran/projects/hmm-mouse/data/txtData/S10_05_19_2017*.txt')
+filenames = glob.glob('/home/kiran/projects/hmm-mouse/data/txtData/S*.txt')
 
 
 def _bytes_feature(value):
@@ -106,18 +106,19 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
     # process all filenames into a training and testing data -TF records
     for file in filenames:
         # numpy loadtxt for file with column names and formats
+        print(file)
         data_cond = np.loadtxt(file,dtype={'names': ['Period', 'Block', 'Trial','Trial_id','x_ord','y_ord'],  
-                    'formats': ['S3', 'S7' ,'S6','i4', 'i4', 'i4']}, delimiter="\t",skiprows=1)
+                    'formats': ['S3', 'S7' ,'S6','i4', 'i4', 'i4']}, delimiter=",",skiprows=1)
         # name to save TF records
         sName = file.replace('.txt','')
         saveName = sName.split("/")
         # display current file being processed
-        tfrecords_train_savename = "data/"+saveName[-1]+"_train_"+tfrecords_filename
+        tfrecords_train_savename = "data/tfrecords/"+saveName[-1]+"_train_"+tfrecords_filename
         print(tfrecords_train_savename)
-        tfrecords_test_savename = "data/"+saveName[-1]+"_test_"+tfrecords_filename
+        tfrecords_test_savename = "data/tfrecords/"+saveName[-1]+"_test_"+tfrecords_filename
         # open recordwriters for training and testing data
         
-        testWriter = tf.python_io.TFRecordWriter(tfrecords_test_savename)
+        #testWriter = tf.python_io.TFRecordWriter(tfrecords_test_savename)
         
         # process text to convert text labels to numerical indicators
         period = processText(data_cond['Period'],0)
@@ -176,34 +177,35 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
                 'foilInd' : _int64_feature(foil[idx]),      # 5
                 'pos'     : _int64_feature(pos[idx]),       # 6
                 'trial_id': _int64_feature(trial_id[idx]),  # 7
-                'x_ord'   : _int64_feature(x_ord[idx]),     # 8
-                'y_ord'   : _int64_feature(y_ord[idx]),     # 9
+                'x_ord'   : _float_feature(x_ord[idx]),     # 8
+                'y_ord'   : _float_feature(y_ord[idx]),     # 9
                 'x_vel'   : _float_feature(x_vel[idx]),     # 10
                 'y_vel'   : _float_feature(y_vel[idx]),     # 11
                 'x_acc'   :  _float_feature(x_acc[idx]),    # 12
                 'y_acc'   :  _float_feature(y_acc[idx]),    # 13
-                'out_x'   : _int64_feature(out_x[idx]),     # 14
-                'out_y'   : _int64_feature(out_y[idx]),     # 15
+                'out_x'   : _float_feature(out_x[idx]),     # 14
+                'out_y'   : _float_feature(out_y[idx]),     # 15
                 'out_xvel' : _float_feature(out_xvel[idx]), # 16
                 'out_yvel' : _float_feature(out_yvel[idx]), # 17
                 'out_xacc' : _float_feature(out_xacc[idx]), # 18
                 'out_yacc' : _float_feature(out_yacc[idx]),  # 19
                 'time_after_stim' : _int64_feature(timer),   # 20
-                'prev_pos' : _int64_feature(prev_pos)
+                'prev_pos' : _int64_feature(prev_pos)        # 21
             }))
             
             timer = timer+1
             prev_block = block[idx]
             trainWriter.write(example.SerializeToString())
-            testWriter.write(example.SerializeToString())
+            #testWriter.write(example.SerializeToString())
     
         trainWriter.close()
-        testWriter.close()
+        #testWriter.close()
         
-
 
 tfrecords_filename = 'mouse_subjects.tfrecords'
 
+
 writeTFrecords(tfrecords_filename,filenames, 1)
+
 print("Finished generating TFRecords for training and testing")
 

@@ -14,7 +14,7 @@ import sys
 class sequenceModel:
 
     def __init__(self):
-        self.filenames = glob.glob('/Users/kitoo/Box Sync/Research/data_summer_2017/txtData/*.txt')
+        #self.filenames = glob.glob('/Users/kitoo/Box Sync/Research/data_summer_2017/txtData/*.txt')
         with tf.name_scope('seqModel'):
             self.createParams()
 
@@ -29,7 +29,7 @@ class sequenceModel:
         # Previous control vector to update model state effectively
         self.a_prev = tf.placeholder(tf.float64, shape=[1,2], name='a_prev')
         # A time based interval when stimulus comes on
-        self.timer_stim = tf.placeholder(tf.int64, shape=[1,1], name='timer_stim')
+        self.timer_stim = tf.placeholder(tf.int64, shape=[], name='timer_stim')
         # Travelling from pos1 to pos2
         self.pos1 = tf.placeholder(tf.int64, shape=[], name='pos1' )
         self.pos2 = tf.placeholder(tf.int64, shape=[], name='pos2' )
@@ -55,7 +55,7 @@ class sequenceModel:
                                initializer = tf.random_normal_initializer())
 
         # time on average to notice target or foil
-        self.delay_var = tf.get_variable('delay_var', shape=(1), dtype=tf.int64, 
+        self.delay_var = tf.get_variable('delay_var', shape=(), dtype=tf.int64, 
                                initializer = tf.constant_initializer(30))
 
         self.weight_evidence = tf.get_variable('weight_evidence', shape=(1,2), dtype=tf.float64, 
@@ -175,8 +175,6 @@ class sequenceModel:
         # a_prev = tf.stop_gradient(a_prev)
         print("Running Model")
         timer_eq = tf.reshape(tf.equal(self.time_after_stim,self.delay_var), [])
-        print(self.new_evidence[self.foilInd, self.pos1, self.pos2,:],"\n\n")
-        print(self.a_prev,"\n\n")
         a_prev_val = tf.cond(timer_eq , lambda: self.new_evidence[self.foilInd, self.pos1, self.pos2,:], lambda: self.a_prev)
         # if self.time_after_stim == self.delay_var:
         #     #a_prev_val = self.a_prev
@@ -208,7 +206,7 @@ class sequenceModel:
                                             self.a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
                                             self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
-                                            self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
+                                            self.timer_stim : np.array( time_after_stim[0,0] ) ,
                                             self.pos1 :  np.array( prev_pos[0,0]-1 ),
                                             self.pos2 : np.array( pos[0,0]-1 ) 
                                         })
@@ -219,7 +217,7 @@ class sequenceModel:
                                             self.a : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
                                             self.X_pred : np.array([[ out_x[0,0], out_y[0,0], out_xvel[0,0], out_yvel[0,0] ]]),
                                             self.a_prev : np.array([[ x_acc[0,0], y_acc[0,0] ]]),
-                                            self.timer_stim : np.array([[ time_after_stim[0,0] ]]) ,
+                                            self.timer_stim : np.array( time_after_stim[0,0] ) ,
                                             self.pos1 :  np.array( prev_pos[0,0]-1 ),
                                             self.pos2 : np.array( pos[0,0]-1 ) 
                                         })
@@ -230,6 +228,7 @@ class sequenceModel:
         function to train the model parameters using ADAM optimizer to calculate parameters minimizing prediction error
 
         input : filenames_train - filename of TF Record
+                fname : file to save fits and parameters from the model
 
         output : all_loss_values
         """
@@ -270,7 +269,7 @@ class sequenceModel:
                 batch = tf.train.batch([self.x_ord, self.y_ord, self.x_vel, self.y_vel, self.x_acc, self.y_acc,
                                 self.out_x, self.out_y, self.out_xvel, self.out_yvel, self.out_xacc, self.out_yacc, 
                                 self.time_after_stim, self.block, self.pos, self.prev_pos], 
-                                batch_size=1, capacity=20000, num_threads=1)
+                                batch_size=1, capacity=200000, num_threads=2)
                 coords = tf.train.Coordinator()
                 threads = tf.train.start_queue_runners(sess=sess, coord=coords)
  
@@ -291,7 +290,7 @@ class sequenceModel:
                     with tf.name_scope('seqModel'):
                         X_hat_val, loss_val, X_val, evidence_val = self.getLoss(sess, batch, train, X_hat, loss, accumulated_evidence)
                         #evidence_val = sess.run(accumulated_evidence)
-                    if idx%1000 == 0:
+                    if idx%20000 == 0:
                         print("Processing record : ", idx,"\n")
 
                     if np.isnan(loss_val):
@@ -326,7 +325,7 @@ class sequenceModel:
 
             coords.request_stop()
             coords.join(threads)
-            sess.close()
+            #sess.close()
             
         return all_loss_values
 
@@ -390,7 +389,7 @@ class sequenceModel:
                 with tf.name_scope('seqModel'):
                     X_hat_val, loss_val, X_val, evidence_val = self.getLoss(sess, batch, None, X_hat, loss, accumulated_evidence)
                 
-                if idx%10000 == 0:
+                if idx%20000 == 0:
                     print("Processing record : ", idx,"\n")
 
                 if np.isnan(loss_val):
@@ -419,12 +418,11 @@ class sequenceModel:
             sess.close()
 
 if __name__ == "__main__":
-    
-    ssm = sequenceModel()
     # Run training and store the best results as a checkpoint #
     print("="*10+"\tTraining Model\t"+"="*10+"\n"*2)
     filenames_train = glob.glob('/home/kiran/projects/Kalman/data/S10_05_19_2017*train*subjects.tfrecords_block*')
-    for subject in filenames_train[:]:
+    ssm = sequenceModel()
+    for subject in filenames_train[9:]:
         print(subject)
         ssm.training(subject, subject.replace(".tfrecords","."))
 
