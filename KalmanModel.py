@@ -352,8 +352,9 @@ class sequenceModel:
             print(filenames_test)
             sess.run(tf.local_variables_initializer())
             sess.run(tf.global_variables_initializer())
-            new_saver = tf.train.import_meta_graph(filenames_test.replace('tfrecords','ckpt.meta').replace('test','train'))
-            new_saver.restore(sess, tf.train.latest_checkpoint('./data/'))
+            #new_saver = tf.train.import_meta_graph(filenames_test.replace('tfrecords','ckpt.meta').replace('test','train'))
+            new_saver = tf.train.Saver()
+            new_saver.restore(sess, filenames_test.replace('tfrecords','ckpt').replace('test','train'))
 
             # Read in model parameters from saved graph
             graph = tf.get_default_graph()

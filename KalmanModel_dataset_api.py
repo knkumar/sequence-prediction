@@ -4,6 +4,7 @@ import tensorflow as tf
 import glob
 import sys
 import os
+import pathlib
 from create_dataset import create_dataset
 
 """
@@ -213,8 +214,8 @@ class sequenceModel:
                     if idx%10000 == 0:
                         print("Processing record : ", idx,"\n")
                     if np.isnan(loss_val):
-                        print(self.sess.run(self.X))
-                        print(self.sess.run(self.F))
+                        self.sess.run(tf.local_variables_initializer())
+                        self.sess.run(tf.global_variables_initializer())
                         print("loss for {} value is {}".format(X_hat_val, loss_val))
                     all_loss_values = np.append( all_loss_values, np.array([loss_val]), axis=0 )
                     all_X_hat = np.concatenate( (all_X_hat, X_hat_val) )
@@ -352,11 +353,18 @@ class sequenceModel:
 if __name__ == "__main__":
     # Run training and store the best results as a checkpoint #
     print("="*10+"\tTraining Model\t"+"="*10+"\n"*2)
-    filenames_train = glob.glob('/home/kiran/projects/Kalman/data/tfrecords/S*train*subjects.tfrecords_block*')
+    filenames_train = glob.glob('/scratch/knkumar/Kalman/data/tfrecords/S*train*subjects.tfrecords_block*')
     for subject in filenames_train:
     	with sequenceModel(subject) as ssm:
-            print(subject)
-            ssm.training(subject, subject.replace(".tfrecords",".").replace("tfrecords/",""))
+            fname = subject.replace(".tfrecords",".").replace("tfrecords/","")
+            #print(fname)
+            sname = fname.split("train")[0]
+            sname = sname.split("/")[-1]
+            fname = fname.replace("data/","data/"+sname[:-1]+"/")
+            fname = fname.replace("train_mouse_subjects._","") 
+            dfname = ("/").join(fname.split("/")[:-1])
+            pathlib.Path(dfname).mkdir(parents=True, exist_ok=True)
+            ssm.training(subject, fname)
 
 
     # Run testing using the stored checkpoint #
