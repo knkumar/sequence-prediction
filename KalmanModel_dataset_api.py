@@ -3,7 +3,7 @@ import tensorflow as tf
 #from tensorflow.python.framework import ops
 import glob
 import sys
-
+import os
 from create_dataset import create_dataset
 
 """
@@ -198,7 +198,7 @@ class sequenceModel:
         threshold = 0.1
         count = 1
 
-        for _ in range(100):
+        for _ in range(150):
             self.sess.run(self.dataset_init_op)
             all_loss_values = np.array([])
             all_X_hat = np.zeros([1, 4])
@@ -233,10 +233,29 @@ class sequenceModel:
                 all_evidence = np.delete(all_evidence,0,0)
                 all_X_val = np.delete(all_X_val,0,0)
                 loss_val = self.sess.run(tf.reduce_mean(all_loss_values))
+                if os.path.isfile(fname+"_parameters_from_fit.csv"):
+                    os.remove(fname+"_parameters_from_fit.csv")
+                f = open(fname+"_parameters_from_fit.csv","ab")
+                np.savetxt(f,self.sess.run(self.F), header="Parameter- F\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.G), header="Parameter- G\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.a_max), header="Parameter- a_max\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.evidence), header="Parameter- evidence\n", delimiter='\t')
+                np.savetxt(f,[self.sess.run(self.delay_var)], header="Parameter- delay_var\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.weight_evidence), header="Parameter- weight_evidence\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.mu), header="Parameter- mu\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.sigma), header="Parameter- sigma\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics[0,0,:,:]).flatten(), header="Parameter- attractor_dynamics 0_1\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics[0,1,:,:]).flatten(), header="Parameter- attractor_dynamics 0_2\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics[0,2,:,:]).flatten(), header="Parameter- attractor_dynamics 0_3\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics[1,0,:,:]).flatten(), header="Parameter- attractor_dynamics 1_1\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics[1,1,:,:]).flatten(), header="Parameter- attractor_dynamics 1_2\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics[1,2,:,:]).flatten(), header="Parameter- attractor_dynamics 1_3\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics).flatten(), header="Parameter- attractor_dynamics\n", delimiter='\t')
+                f.close()
 
-                np.savetxt(fname+'fitsFromModel_train.csv', all_X_hat, delimiter=',')
-                np.savetxt(fname+'dataToFit_train.csv', all_X_val, delimiter=',')
-                np.savetxt(fname+'evidenceFromModel_train.csv', all_evidence, delimiter=',')
+                np.savetxt(fname+'fitsFromModel_train.csv', all_X_hat, header="fits From Model\n",delimiter=',')
+                np.savetxt(fname+'dataToFit_train.csv', all_X_val, header="data to fit\n", delimiter=',')
+                np.savetxt(fname+'evidenceFromModel_train.csv', all_evidence, header="evidence From Model\n", delimiter=',')
             print("{} : loss value is {}".format(count,loss_val))
             count = count + 1         
         
@@ -333,11 +352,11 @@ class sequenceModel:
 if __name__ == "__main__":
     # Run training and store the best results as a checkpoint #
     print("="*10+"\tTraining Model\t"+"="*10+"\n"*2)
-    filenames_train = glob.glob('/home/kiran/projects/Kalman/data/tfrecords/S10_05_19_2017*train*subjects.tfrecords_block*')
-    for subject in filenames_train[9:]:
+    filenames_train = glob.glob('/home/kiran/projects/Kalman/data/tfrecords/S*train*subjects.tfrecords_block*')
+    for subject in filenames_train:
     	with sequenceModel(subject) as ssm:
             print(subject)
-            ssm.training(subject, subject.replace(".tfrecords","."))
+            ssm.training(subject, subject.replace(".tfrecords",".").replace("tfrecords/",""))
 
 
     # Run testing using the stored checkpoint #
