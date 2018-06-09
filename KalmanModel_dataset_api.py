@@ -112,9 +112,10 @@ class sequenceModel:
         
         # attractor dynamics for target and foil movements 
         # from start position to destination position
-        self.attractor_dynamics = tf.get_variable('attractor_dynamics', shape=(2,3,3,2), dtype=tf.float64, 
+        self.attractor_dynamics_target = tf.get_variable('attractor_dynamics_target', shape=(3,3,2), dtype=tf.float64, 
                                 initializer = tf.random_normal_initializer())
-
+        self.attractor_dynamics_foil = tf.get_variable('attractor_dynamics_foil', shape=(3,3,2), dtype=tf.float64, 
+                                initializer = tf.random_normal_initializer())
 
     def model(self):
         """
