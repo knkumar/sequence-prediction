@@ -176,7 +176,11 @@ class sequenceModel:
         # a_prev = tf.stop_gradient(a_prev)
         print("Running Model")
         timer_eq = tf.reshape(tf.equal(self.time_after_stim,self.delay_var), [])
-        a_prev_val = tf.cond(timer_eq , lambda: self.new_evidence[self.foilInd, self.pos1, self.pos2,:], lambda: self.a_prev)
+        a_prev_val = tf.cond(timer_eq , 
+                                lambda: tf.cond(self.foilInd, 
+                                                lambda:self.new_evidence_foil[self.pos1, self.pos2,:], 
+                                                lambda:self.new_evidence_target[self.pos1,self.pos2,:])
+                                lambda: self.a_prev)
         # if self.time_after_stim == self.delay_var:
         #     #a_prev_val = self.a_prev
         #     a_prev_val = self.new_evidence[self.foilInd, self.pos1, self.pos2,:]
