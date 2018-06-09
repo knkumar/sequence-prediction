@@ -71,9 +71,10 @@ class sequenceModel:
         self.one = tf.constant([1.0,1.0], dtype=tf.float64)
         self.evidence_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)
         
-        self.new_evidence = tf.get_variable('new_evidence', shape=(2,3,3,2), dtype=tf.float64, 
+        self.new_evidence_target = tf.get_variable('new_evidence_target', shape=(3,3,2), dtype=tf.float64, 
                                 initializer = tf.random_normal_initializer())
-
+        self.new_evidence_foil = tf.get_variable('new_evidence_foil', shape=(3,3,2), dtype=tf.float64, 
+                                initializer = tf.random_normal_initializer())
 
 
     def cast_and_reshape(self, item, cast, shape):
