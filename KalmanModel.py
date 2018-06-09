@@ -159,7 +159,8 @@ class sequenceModel:
                 G - Control matrix
                 evidence_dist - a distribution to add noise to the process (a normal distribution here)
                 time_after_stim - timing index of evenets
-                new_evidence - the attractor dynamics for a target and foil
+                new_evidence_target - the attractor dynamics for a target
+                new_evidence_foil - attractor dynamics for foils (should be smaller than target)
 
         output : X_hat - prediction for the next time point
                  accumulated_evidence - accumulated control and noise returned for later processing
@@ -181,11 +182,6 @@ class sequenceModel:
                                                 lambda:self.new_evidence_foil[self.pos1, self.pos2,:], 
                                                 lambda:self.new_evidence_target[self.pos1,self.pos2,:])
                                 lambda: self.a_prev)
-        # if self.time_after_stim == self.delay_var:
-        #     #a_prev_val = self.a_prev
-        #     a_prev_val = self.new_evidence[self.foilInd, self.pos1, self.pos2,:]
-        # else:
-        #     a_prev_val = self.a_prev
 
         stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
         a_x = tf.maximum(self.zero, a_prev_val)
@@ -254,7 +250,8 @@ class sequenceModel:
         #train = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=[F, G, a_max, evidence, mu, sigma, delay_var])
         optimizer = tf.train.AdamOptimizer(1e-3)
         grads_and_vars = optimizer.compute_gradients(loss, var_list=[self.F, self.G, self.a_max, self.evidence, self.mu, self.sigma, 
-                                                                self.delay_var, self.weight_evidence, self.new_evidence])
+                                                                self.delay_var, self.weight_evidence, 
+                                                                self.new_evidence_target, self.new_evidence_foil])
         train = optimizer.apply_gradients(grads_and_vars)
 
         # intialize a saver to save trainmed model variables
