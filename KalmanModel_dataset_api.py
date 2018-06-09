@@ -145,7 +145,11 @@ class sequenceModel:
         # a_prev = tf.stop_gradient(a_prev)
         print("Running Model")
         timer_eq = tf.reshape(tf.equal(self.time_after_stim,self.delay_var), [])
-        a_prev_val = tf.cond(timer_eq , lambda: self.attractor_dynamics[self.foilInd, self.pos1, self.pos2,:], lambda: self.a_prev)
+        a_prev_val = tf.cond(timer_eq , 
+                            lambda: tf.cond(self.foilInd,
+                                    lambda:self.attractor_dynamics_foil[self.pos1, self.pos2,:], 
+                                    lambda:self.attractor_dynamics_target[self.pos1, self.pos2,:]), 
+                            lambda: self.a_prev)
 
         stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
         a_x = tf.maximum(self.zero, a_prev_val)
@@ -183,7 +187,8 @@ class sequenceModel:
         # operation train minimizes the loss function
         optimizer = tf.train.AdamOptimizer(1e-3)
         grads_and_vars = optimizer.compute_gradients(loss, var_list=[self.F, self.G, self.a_max, self.evidence, self.mu, self.sigma, 
-                                                                self.delay_var, self.weight_evidence, self.attractor_dynamics])
+                                                                self.delay_var, self.weight_evidence, 
+                                                                self.attractor_dynamics_foil, self.attractor_dynamics_target])
         train = optimizer.apply_gradients(grads_and_vars)
 
         # intialize a saver to save trained model variables
@@ -235,8 +240,11 @@ class sequenceModel:
                 all_evidence = np.delete(all_evidence,0,0)
                 all_X_val = np.delete(all_X_val,0,0)
                 loss_val = self.sess.run(tf.reduce_mean(all_loss_values))
+                # if the parameter file already exists remove it
+                # create a new parameter file to append varilables in readable format
                 if os.path.isfile(fname+"_parameters_from_fit.csv"):
                     os.remove(fname+"_parameters_from_fit.csv")
+                # open a file handle to save parameters
                 f = open(fname+"_parameters_from_fit.csv","ab")
                 np.savetxt(f,self.sess.run(self.F), header="Parameter- F\n", delimiter='\t')
                 np.savetxt(f,self.sess.run(self.G), header="Parameter- G\n", delimiter='\t')
@@ -246,13 +254,12 @@ class sequenceModel:
                 np.savetxt(f,self.sess.run(self.weight_evidence), header="Parameter- weight_evidence\n", delimiter='\t')
                 np.savetxt(f,self.sess.run(self.mu), header="Parameter- mu\n", delimiter='\t')
                 np.savetxt(f,self.sess.run(self.sigma), header="Parameter- sigma\n", delimiter='\t')
-                np.savetxt(f,self.sess.run(self.attractor_dynamics[0,0,:,:]).flatten(), header="Parameter- attractor_dynamics 0_1\n", delimiter='\t')
-                np.savetxt(f,self.sess.run(self.attractor_dynamics[0,1,:,:]).flatten(), header="Parameter- attractor_dynamics 0_2\n", delimiter='\t')
-                np.savetxt(f,self.sess.run(self.attractor_dynamics[0,2,:,:]).flatten(), header="Parameter- attractor_dynamics 0_3\n", delimiter='\t')
-                np.savetxt(f,self.sess.run(self.attractor_dynamics[1,0,:,:]).flatten(), header="Parameter- attractor_dynamics 1_1\n", delimiter='\t')
-                np.savetxt(f,self.sess.run(self.attractor_dynamics[1,1,:,:]).flatten(), header="Parameter- attractor_dynamics 1_2\n", delimiter='\t')
-                np.savetxt(f,self.sess.run(self.attractor_dynamics[1,2,:,:]).flatten(), header="Parameter- attractor_dynamics 1_3\n", delimiter='\t')
-                np.savetxt(f,self.sess.run(self.attractor_dynamics).flatten(), header="Parameter- attractor_dynamics\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics_target[0,:,:]), header="Parameter- attractor_dynamics 0_1\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics_target[1,:,:]), header="Parameter- attractor_dynamics 0_2\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics_target[2,:,:]), header="Parameter- attractor_dynamics 0_3\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics_foil[0,:,:]), header="Parameter- attractor_dynamics 1_1\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics_foil[1,:,:]), header="Parameter- attractor_dynamics 1_2\n", delimiter='\t')
+                np.savetxt(f,self.sess.run(self.attractor_dynamics_foil[2,:,:]), header="Parameter- attractor_dynamics 1_3\n", delimiter='\t')
                 f.close()
 
                 np.savetxt(fname+'fitsFromModel_train.csv', all_X_hat, header="fits From Model\n",delimiter=',')

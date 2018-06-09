@@ -180,7 +180,7 @@ class sequenceModel:
         a_prev_val = tf.cond(timer_eq , 
                                 lambda: tf.cond(self.foilInd, 
                                                 lambda:self.new_evidence_foil[self.pos1, self.pos2,:], 
-                                                lambda:self.new_evidence_target[self.pos1,self.pos2,:])
+                                                lambda:self.new_evidence_target[self.pos1,self.pos2,:]),
                                 lambda: self.a_prev)
 
         stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
