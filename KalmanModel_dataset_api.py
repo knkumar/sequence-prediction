@@ -145,8 +145,9 @@ class sequenceModel:
         # a_prev = tf.stop_gradient(a_prev)
         print("Running Model")
         timer_eq = tf.reshape(tf.equal(self.time_after_stim,self.delay_var), [])
+        foil_eq = tf.reshape(tf.equal(self.foilInd,np.array([1],dtype='int64')), [])
         a_prev_val = tf.cond(timer_eq , 
-                            lambda: tf.cond(self.foilInd,
+                            lambda: tf.cond(foil_eq,
                                     lambda:self.attractor_dynamics_foil[self.pos1, self.pos2,:], 
                                     lambda:self.attractor_dynamics_target[self.pos1, self.pos2,:]), 
                             lambda: self.a_prev)
@@ -246,6 +247,7 @@ class sequenceModel:
                     os.remove(fname+"_parameters_from_fit.csv")
                 # open a file handle to save parameters
                 f = open(fname+"_parameters_from_fit.csv","ab")
+                np.savetxt(f, min_loss, header="Loss Value \n", delimiter='\t', fmt="%f")
                 np.savetxt(f,self.sess.run(self.F), header="Parameter- F\n", delimiter='\t')
                 np.savetxt(f,self.sess.run(self.G), header="Parameter- G\n", delimiter='\t')
                 np.savetxt(f,self.sess.run(self.a_max), header="Parameter- a_max\n", delimiter='\t')
