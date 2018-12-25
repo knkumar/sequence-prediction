@@ -154,7 +154,7 @@ class sequenceModel:
 
         stochastic_evidence = tf.add(self.evidence, self.evidence_dist.sample([1]))
         a_x = tf.maximum(self.zero, a_prev_val)
-        sample_ax = tf.multiply(a_x,stochastic_evidence)
+        sample_ax = tf.multiply(a_x, stochastic_evidence)
         accumulated_evidence = tf.subtract(self.one ,  tf.cast(tf.exp(tf.negative( sample_ax )), tf.float64) )
         time_delta = tf.cast( tf.subtract(self.delay_var, self.time_after_stim), tf.float64)
         a_baseline = tf.multiply(self.a, tf.multiply(tf.tanh(time_delta), self.weight_evidence) )
