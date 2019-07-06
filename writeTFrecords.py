@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
-import pandas as pd
 import glob
+
 filenames = glob.glob('/home/kiran/projects/hmm-mouse/data/txtData/S*.txt')
 
 
@@ -11,7 +11,8 @@ def _bytes_feature(value):
     input : value
     output : ByteList Feature object
     """
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+    # return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
 
 def _int64_feature(value):
     """ 
@@ -19,7 +20,8 @@ def _int64_feature(value):
     input : value
     output : int64List Feature object
     """
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+    # return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
 def _float_feature(value):
     """ 
@@ -27,11 +29,12 @@ def _float_feature(value):
     input : value
     output : floatList Feature object
     """
-    return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+    # return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
 
 
-def processText(data, pos):
+def processText(data, pos, period = None):
     """
     Function to process Text data and convert labels to numeric values
     input : data - data to be processed
@@ -58,7 +61,7 @@ def processText(data, pos):
     
     prev_item = ''
 
-    for item in data:
+    for idx,item in enumerate(data):
         # if postition is required
         if pos:
             # check if item is foil
@@ -79,7 +82,7 @@ def processText(data, pos):
                 foilRet.append(0)
         else:
             # if a new event occurs
-            if prev_item != item:
+            if prev_item != item or (np.size(period) > 1 and period[idx-1] != period[idx]):
                 # increment indicator variable
                 count = count +1
                 # append indicator variable to data for returning
@@ -89,9 +92,9 @@ def processText(data, pos):
                 dataRet.append(count)
             prev_item = item
     if pos:
-        return(dataRet, foilRet, posRet)
+        return(np.array(dataRet), np.array(foilRet), np.array(posRet))
     else:
-        return(dataRet)
+        return(np.array(dataRet))
 
 
 
@@ -108,7 +111,7 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         # numpy loadtxt for file with column names and formats
         print(file)
         data_cond = np.loadtxt(file,dtype={'names': ['Period', 'Block', 'Trial','Trial_id','x_ord','y_ord'],  
-                    'formats': ['S3', 'S7' ,'S6','i4', 'i4', 'i4']}, delimiter=",",skiprows=1)
+                    'formats': ['S3', 'S7' ,'S6','i4', 'i4', 'i4']}, delimiter="\t",skiprows=1)
         # name to save TF records
         sName = file.replace('.txt','')
         saveName = sName.split("/")
@@ -117,12 +120,12 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
         print(tfrecords_train_savename)
         tfrecords_test_savename = "data/tfrecords/"+saveName[-1]+"_test_"+tfrecords_filename
         # open recordwriters for training and testing data
-        
-        #testWriter = tf.python_io.TFRecordWriter(tfrecords_test_savename)
+        testWriter = tf.io.TFRecordWriter(tfrecords_test_savename+'.tfrecords')
         
         # process text to convert text labels to numerical indicators
         period = processText(data_cond['Period'],0)
-        block  = processText(data_cond['Block'],0)
+        print(period.shape)
+        block  = processText(data_cond['Block'],0, period)
         [stim, foil, pos]  = processText(data_cond['Trial'],1) 
         # read input data
         x_ord = data_cond['x_ord']
@@ -155,57 +158,59 @@ def writeTFrecords(tfrecords_filename, filenames, prediction_time):
     
         # generate an example for each time point
         prev_block = 0
-        for idx in range(len(period)):
-            # schedule new information for events
-            if prev_block != block[idx]:
-                print(period[idx],block[idx])
-                trainWriter = tf.python_io.TFRecordWriter(
-                    tfrecords_train_savename+"_block"+str(period[idx])+str(block[idx]))
+        time_after_stim = np.array([],dtype=np.int32)
+        prev_pos_arr = np.array([],dtype=np.int32)
+        uniq_block = np.unique(block)
+        prev_pos = 1
 
+        for idx,trial_num in enumerate(trial_id):
             if trial_id_prev != trial_id[idx]:
                 timer = 1
                 trial_id_prev = trial_id[idx]
-                prev_pos = pos[idx]
-                
-            
+                if idx > 0:
+                    prev_pos = pos[idx-1]
+            time_after_stim = np.append(time_after_stim,timer)
+            prev_pos_arr = np.append(prev_pos_arr,prev_pos)
+            timer = timer+1
+
+        for curr_block in uniq_block:
+            # open recordwriters for training and testing data
+            blk_ids = np.where(block == curr_block)[0]  
+            trainWriter = tf.io.TFRecordWriter(tfrecords_train_savename+'_block_'+str(curr_block)+'.tfrecords')
+            # print(np.shape(blk_ids), type(blk_ids))
             # generate example with features
             example = tf.train.Example(features=tf.train.Features(feature={
-                'Subject' : _int64_feature(subjectId),      # 1
-                'period'  : _int64_feature(period[idx]),    # 2
-                'block'   : _int64_feature(block[idx]),     # 3
-                'stim'    : _int64_feature(stim[idx]),      # 4
-                'foilInd' : _int64_feature(foil[idx]),      # 5
-                'pos'     : _int64_feature(pos[idx]),       # 6
-                'trial_id': _int64_feature(trial_id[idx]),  # 7
-                'x_ord'   : _float_feature(x_ord[idx]),     # 8
-                'y_ord'   : _float_feature(y_ord[idx]),     # 9
-                'x_vel'   : _float_feature(x_vel[idx]),     # 10
-                'y_vel'   : _float_feature(y_vel[idx]),     # 11
-                'x_acc'   :  _float_feature(x_acc[idx]),    # 12
-                'y_acc'   :  _float_feature(y_acc[idx]),    # 13
-                'out_x'   : _float_feature(out_x[idx]),     # 14
-                'out_y'   : _float_feature(out_y[idx]),     # 15
-                'out_xvel' : _float_feature(out_xvel[idx]), # 16
-                'out_yvel' : _float_feature(out_yvel[idx]), # 17
-                'out_xacc' : _float_feature(out_xacc[idx]), # 18
-                'out_yacc' : _float_feature(out_yacc[idx]),  # 19
-                'time_after_stim' : _int64_feature(timer),   # 20
-                'prev_pos' : _int64_feature(prev_pos)        # 21
+                'Subject' : _int64_feature(np.repeat(subjectId,np.size(blk_ids)) ),      # 1
+                'period'  : _int64_feature(period[blk_ids]),    # 2
+                'block'   : _int64_feature(block[blk_ids]),     # 3
+                'stim'    : _int64_feature(stim[blk_ids]),      # 4
+                'foilInd' : _int64_feature(foil[blk_ids]),      # 5
+                'pos'     : _int64_feature(pos[blk_ids]),       # 6
+                'trial_id': _int64_feature(trial_id[blk_ids]),  # 7
+                'x_ord'   : _float_feature(x_ord[blk_ids]),     # 8
+                'y_ord'   : _float_feature(y_ord[blk_ids]),     # 9
+                'x_vel'   : _float_feature(x_vel[blk_ids]),     # 10
+                'y_vel'   : _float_feature(y_vel[blk_ids]),     # 11
+                'x_acc'   :  _float_feature(x_acc[blk_ids]),    # 12
+                'y_acc'   :  _float_feature(y_acc[blk_ids]),    # 13
+                'out_x'   : _float_feature(out_x[blk_ids]),     # 14
+                'out_y'   : _float_feature(out_y[blk_ids]),     # 15
+                'out_xvel' : _float_feature(out_xvel[blk_ids]), # 16
+                'out_yvel' : _float_feature(out_yvel[blk_ids]), # 17
+                'out_xacc' : _float_feature(out_xacc[blk_ids]), # 18
+                'out_yacc' : _float_feature(out_yacc[blk_ids]),  # 19
+                'time_after_stim' : _int64_feature(time_after_stim[blk_ids]),   # 20
+                'prev_pos' : _int64_feature(prev_pos_arr[blk_ids])        # 21
             }))
-            
-            timer = timer+1
-            prev_block = block[idx]
+
             trainWriter.write(example.SerializeToString())
-            #testWriter.write(example.SerializeToString())
-    
-        trainWriter.close()
-        #testWriter.close()
+            testWriter.write(example.SerializeToString())
+            trainWriter.close()
+
+        testWriter.close()
         
-
-tfrecords_filename = 'mouse_subjects.tfrecords'
-
+tfrecords_filename = 'mouse'
 
 writeTFrecords(tfrecords_filename,filenames, 1)
-
 print("Finished generating TFRecords for training and testing")
 
